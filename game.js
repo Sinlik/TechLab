@@ -1,0 +1,171 @@
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let scene = "game";
+
+let text = function(string, x, y, px) {
+    let text = string;
+    ctx.fillStyle = "black";
+    ctx.font = px + "px Arial";
+    textAlign = "center";
+    ctx.fillText(text, x, y);
+}
+
+let mouseX = 0;
+let mouseY = 0;
+let clickX = 0;
+let clickY = 0;
+
+canvas.addEventListener('mousemove', function(event) {
+    let rect = canvas.getBoundingClientRect();
+    mouseX = event.clientX - rect.left;
+    mouseY = event.clientY - rect.top;
+});
+
+canvas.addEventListener('click', function(event) {
+    let rect = canvas.getBoundingClientRect();
+    clickX = event.clientX - rect.left;
+    clickY = event.clientY - rect.top;
+});
+
+function randomSymbol() {
+    let all = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, "+", "-", "*"];
+    return all[Math.floor(Math.random() * all.length)];
+}
+
+// function to display the number to solve at the top of the game screen
+let numberToSolveScreen = function(x, y, num) {
+    let numberToSolve = Math.floor(Math.random() * 100) + 1;
+    ctx.fillStyle = "rgb(65, 115, 138)";
+    ctx.fillRect(x, y, 100, 30);
+    ctx.fillStyle = "rgb(255, 255, 255)";
+    ctx.font = "20px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("Find: " + num, x + 13, y + 15);
+}
+
+// global text for result screen
+let resultScreen = function(x, y, text) {
+    ctx.fillStyle = "rgb(65, 115, 138)";
+    ctx.fillRect(x, y, 100, 30);
+    ctx.fillStyle = "rgb(255, 255, 255)";
+    ctx.font = "20px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(text, x + 13, y + 15);
+}
+
+// check to see when three symbols are clicked in a row, then evaluate the expression and update the result screen
+let symbolsClicked = 0;
+let resultText = "";
+let mathSquare = function(x, y, width, height, symbol) {
+    let color = "rgb(143, 198, 145)";
+    if (mouseX > x && mouseX < x + width &&
+        mouseY > y && mouseY < y + height) {
+        color = "rgb(85, 116, 86)";
+    }
+    if (clickX > x && clickX < x + width &&
+        clickY > y && clickY < y + height) {
+            console.log(symbolsClicked);
+            if (symbolsClicked == 3) {
+                resultText = "";
+                symbolsClicked = 0;
+            }
+            color = "rgb(36, 37, 43)";
+            if(typeof symbol === "number" && symbolsClicked == 0 || 
+                symbolsClicked == 1 && typeof symbol === "string" || 
+                symbolsClicked == 2 && typeof symbol === "number") {
+                resultText += " " + symbol;
+                symbolsClicked++;
+            }
+
+            if (symbolsClicked == 3) {
+                resultText = eval(resultText);
+            }
+            clickX = -1;
+            clickY = -1;
+    }
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, width, height);
+    ctx.fillStyle = "black";
+    ctx.font = "12px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(symbol, x + width/2, y + height/2 + 1);
+}
+
+let button = function(string, x, y, width, height, target) {
+    let text = string;
+    let btnColor = "rgb(35, 127, 184)";
+    ctx.font = "30px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // Add hover effect
+    if (mouseX > x - width/2 && mouseX < x + width/2 &&
+    mouseY > y - height/2 && mouseY < y + height/2) {
+        btnColor = "rgb(45, 117, 167)";
+        if (clickX > x - width/2 && clickX < x + width/2 &&
+        clickY > y - height/2 && clickY < y + height/2) {
+            scene = target;
+        }
+    }
+    ctx.fillStyle = btnColor;
+    ctx.fillRect(x - width / 2, y - height / 2, width, height);
+    ctx.fillStyle = "white";
+    ctx.fillText(text, x, y);
+}
+
+let squares = [];
+let numberToSolve = 0;
+
+let menu = function() {
+    text("CrossQuiz", canvas.width/2, 100, 50);
+    button("Start", canvas.width/ 2, canvas.height / 2 - 75, 150, 50, "game");
+    button("How", canvas.width / 2, canvas.height / 2, 150, 50, "menu");
+}
+
+let runGame = function() {
+    if (squares.length === 0) {
+        initGame();
+    }
+    button("Back", 100, 50, 150, 50, "menu");
+    ctx.fillStyle = "rgb(67, 69, 85)";
+    ctx.fillRect(100, 200, 600, 350);
+    numberToSolveScreen(canvas.width/2 - 50, canvas.height/2 - 230, numberToSolve);
+    // TODO: error screen for when user presses a symbol that is not valid at that point.
+    // errorScreen(canvas.width/2 - 50, canvas.height/2 - 170, "Click three symbols in a row to evaluate the expression!");
+    resultScreen(canvas.width/2 - 50, canvas.height/2 - 170, resultText);
+
+    for (let sq of squares) {
+        ctx.fillStyle = "rgb(143, 198, 145)";
+        mathSquare(sq.x, sq.y, 20, 20, sq.symbol);
+    }
+}
+
+function initGame() {
+    squares = [];
+    for (let i = 0; i < 10; i++) {
+        for (let j = 0; j < 19; j++) {
+            squares.push({x: 120 + j * 30, y: 220 + i * 32, symbol: randomSymbol()});
+        }
+    }
+    let allSymbols = squares.map(sq => sq.symbol);
+    let numbers = allSymbols.filter(sym => typeof sym === "number");
+    let operators = allSymbols.filter(sym => typeof sym === "string");
+
+    let num1 = numbers[Math.floor(Math.random() * numbers.length)];
+    let num2 = numbers[Math.floor(Math.random() * numbers.length)];
+    let operator = operators[Math.floor(Math.random() * operators.length)];
+    numberToSolve = Math.round(eval(num1 + " " + operator + " " + num2));
+    console.log(num1, operator, num2, "=", numberToSolve);
+}
+
+function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (scene === "menu") {
+        menu();
+    }
+    if (scene === "game") {
+        runGame();
+    }
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
