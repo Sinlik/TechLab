@@ -1,6 +1,7 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 let scene = "menu"; // "menu", "game", "how"
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 let text = function(string, x, y, px) {
     let text = string;
@@ -22,6 +23,60 @@ let points = 0;
 let numToSolve = 0;
 // checking how many math buttons where clicked (within certain rules)
 let symbolsClicked = 0;
+
+function playCorrectSound() {
+    const osc1 = audioCtx.createOscillator();
+    const gain1 = audioCtx.createGain();
+    osc1.connect(gain1);
+    gain1.connect(audioCtx.destination);
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(440, audioCtx.currentTime);
+    osc1.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15);
+    gain1.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    osc1.start(audioCtx.currentTime);
+    osc1.stop(audioCtx.currentTime + 0.3);
+
+    const osc2 = audioCtx.createOscillator();
+    const gain2 = audioCtx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(audioCtx.destination);
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(660, audioCtx.currentTime + 0.15);
+    osc2.frequency.exponentialRampToValueAtTime(1320, audioCtx.currentTime + 0.35);
+    gain2.gain.setValueAtTime(0.0, audioCtx.currentTime);
+    gain2.gain.setValueAtTime(0.25, audioCtx.currentTime + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    osc2.start(audioCtx.currentTime + 0.15);
+    osc2.stop(audioCtx.currentTime + 0.4);
+}
+
+function playWrongSound() {
+    const osc1 = audioCtx.createOscillator();
+    const gain1 = audioCtx.createGain();
+    osc1.connect(gain1);
+    gain1.connect(audioCtx.destination);
+    osc1.type = "sawtooth";
+    osc1.frequency.setValueAtTime(200, audioCtx.currentTime);
+    osc1.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.2);
+    gain1.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+    osc1.start(audioCtx.currentTime);
+    osc1.stop(audioCtx.currentTime + 0.2);
+
+    const osc2 = audioCtx.createOscillator();
+    const gain2 = audioCtx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(audioCtx.destination);
+    osc2.type = "square";
+    osc2.frequency.setValueAtTime(150, audioCtx.currentTime + 0.05);
+    osc2.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.25);
+    gain2.gain.setValueAtTime(0.0, audioCtx.currentTime);
+    gain2.gain.setValueAtTime(0.2, audioCtx.currentTime + 0.05);
+    gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+    osc2.start(audioCtx.currentTime + 0.05);
+    osc2.stop(audioCtx.currentTime + 0.25);
+}
 
 canvas.addEventListener('mousemove', function(event) {
     let rect = canvas.getBoundingClientRect();
@@ -88,15 +143,70 @@ let winningScreen = function() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // first check if no more symbols are left, then display winning screen
-    ctx.fillStyle = "rgb(21, 255, 0)";
-    ctx.fillRect(canvas.width/2 - 160, canvas.height/2 - 50, 320, 100);
-    ctx.fillStyle = "rgb(0, 0, 0)";
-    ctx.font = "30px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText("You win! Final points: " + points, canvas.width/2, canvas.height/2 + 10);
-}
+    const cx = canvas.width / 2, cy = canvas.height / 2;
 
+    // panel
+    ctx.fillStyle = "rgba(15, 25, 60, 0.9)";
+    ctx.fillRect(cx - 200, cy - 80, 400, 180);
+
+    ctx.shadowColor = "rgba(60, 255, 150, 0.6)";
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = "rgba(60, 255, 150, 0.5)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - 200, cy - 80, 400, 180);
+    ctx.shadowBlur = 0;
+
+    // win title
+    ctx.shadowColor = "rgba(80, 255, 160, 0.9)";
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "rgb(80, 255, 160)";
+    ctx.font = "bold 28px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("MISSION COMPLETE", cx, cy - 30);
+    ctx.shadowBlur = 0;
+
+    // points
+    ctx.fillStyle = "rgba(100, 150, 255, 0.8)";
+    ctx.font = "13px 'Courier New'";
+    ctx.fillText("FINAL SCORE  " + points + "  PTS", cx, cy + 10);
+
+    // divider
+    ctx.strokeStyle = "rgba(60, 255, 150, 0.2)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - 120, cy + 32);
+    ctx.lineTo(cx + 120, cy + 32);
+    ctx.stroke();
+
+    // play again button
+    const bx = cx - 100, by = cy + 48, bw = 200, bh = 36;
+    const bHover = mouseX > bx && mouseX < bx + bw && mouseY > by && mouseY < by + bh;
+
+    ctx.fillStyle = bHover ? "rgba(60, 100, 220, 0.4)" : "rgba(15, 25, 80, 0.6)";
+    ctx.fillRect(bx, by, bw, bh);
+
+    ctx.shadowColor = bHover ? "rgba(100, 160, 255, 0.9)" : "rgba(60, 100, 200, 0.4)";
+    ctx.shadowBlur = bHover ? 12 : 5;
+    ctx.strokeStyle = bHover ? "rgba(140, 190, 255, 0.9)" : "rgba(60, 100, 200, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.shadowBlur = 0;
+
+    ctx.shadowColor = bHover ? "rgba(160, 210, 255, 0.9)" : "rgba(100, 160, 255, 0.5)";
+    ctx.shadowBlur = bHover ? 10 : 4;
+    ctx.fillStyle = bHover ? "rgb(200, 225, 255)" : "rgb(120, 170, 255)";
+    ctx.font = "12px 'Courier New'";
+    ctx.fillText("PLAY AGAIN", cx, by + 18);
+    ctx.shadowBlur = 0;
+
+    if (clickX > bx && clickX < bx + bw && clickY > by && clickY < by + bh) {
+        scene = "menu";
+        squares = [];
+        points = 0;
+        clickX = -1; clickY = -1;
+    }
+}
 // global text for result screen
 let resultBgColor = "rgb(65, 115, 138)";
 let resultScreen = function(x, y, text) {
@@ -136,7 +246,13 @@ let resultScreen = function(x, y, text) {
 
     if (symbolsClicked == 3) {
         isCorrect = (resultText == numToSolve);
-        resultBgColor = isCorrect ? "rgb(21, 255, 0)" : "rgb(255, 0, 0)";
+        if (isCorrect) {
+            resultBgColor = "rgb(21, 255, 0)";
+            playCorrectSound();
+        } else {
+            resultBgColor = "rgb(255, 0, 0)";
+            playWrongSound();
+        }
     }
 }
 
@@ -161,7 +277,35 @@ let mathSquare = function(x, y, width, height, symbol) {
     ctx.fillRect(x, y, width, height);
 
     // glowing border
-    if (isClicked) {
+    if (clickX > x && clickX < x + width && clickY > y && clickY < y + height) {
+        // make a clunky sound when clicked for only a little bit of time
+
+        // main clunk oscillator
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.type = "square";
+        oscillator.frequency.setValueAtTime(120, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.02);
+        gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.02);
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.02);
+
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.type = "sawtooth";
+        osc2.frequency.setValueAtTime(80, audioCtx.currentTime);
+        osc2.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.02);
+        gain2.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.02);
+        osc2.start(audioCtx.currentTime);
+        osc2.stop(audioCtx.currentTime + 0.02);
+
+
         ctx.shadowColor = isOp ? "rgba(200, 140, 255, 0.9)" : "rgba(80, 180, 255, 0.9)";
         ctx.shadowBlur = 10;
         ctx.strokeStyle = isOp ? "rgba(200, 140, 255, 0.9)" : "rgba(80, 180, 255, 0.9)";
@@ -276,6 +420,24 @@ let button = function(string, x, y, width, height, target) {
     ctx.shadowBlur = 0;
 
     if (clicked) {
+        // clicking sound effect
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 0.08);
+
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.08);
+
         scene = target;
         clickX = -1;
         clickY = -1;
@@ -367,6 +529,7 @@ ctx.fillText("S O L V E  ·  C L I C K  ·  S C O R E", canvas.width / 2, 148);
 
 let runGame = function() {
     if (squares.length === 0) {
+        console.log("Initializing game...");
         initGame();
     }
     // background for game area
