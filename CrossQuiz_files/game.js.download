@@ -226,8 +226,7 @@ let runGame = function() {
         }
     }
     // if points = number of symbols, then display winning screen
-    let allSymbols = squares.filter(sq => sq.exist).map(sq => sq.symbol);
-    let operators = allSymbols.filter(sym => typeof sym === "string");
+    let operators = squares.filter(sq => sq.exist).map(sq => sq.symbol)
     if (operators == 0) {
         winningScreen();
     }
@@ -240,12 +239,13 @@ function createNumberToSolve() {
     let operators = allSymbols.filter(sym => typeof sym === "string");
 
     console.log("operators.length: " + operators.length + ", numbers.length: " + numbers.length);
-    if (operators.length > 0) {
+    if (operators.length == 0 || numbers.length < 2) {
         let num1 = numbers[Math.floor(Math.random() * numbers.length)];
         let num2 = numbers[Math.floor(Math.random() * numbers.length)];
         let operator = operators[Math.floor(Math.random() * operators.length)];
         numToSolve = Math.round(eval(num1 + " " + operator + " " + num2));
         console.log("can solve number: " + numToSolve + " with: " + num1 + " " + operator + " " + num2);
+
     }
 }
 
