@@ -15,15 +15,23 @@ let mouseX = 0;
 let mouseY = 0;
 let clickX = 0;
 let clickY = 0;
-// math squares
+// math squares 
 let squares = [];
 let isCorrect = false;
 let points = 0;
 // number that needs to be solved
-let numToSolve = 0;
+let mathQuestions = [];
+let mathQuestion = "";
+let mathAnswer = 0;
 // checking how many math buttons where clicked (within certain rules)
 let symbolsClicked = 0;
+// level vars
 
+let levelCount = 20;
+let selectedLevel = 0;
+
+let rows = 1;
+let columns = 2;
 function playCorrectSound() {
     const osc1 = audioCtx.createOscillator();
     const gain1 = audioCtx.createGain();
@@ -88,11 +96,104 @@ canvas.addEventListener('click', function(event) {
     let rect = canvas.getBoundingClientRect();
     clickX = event.clientX - rect.left;
     clickY = event.clientY - rect.top;
+
+    if (scene !== "game" || resetting) return;
+
+    for (let sq of squares) {
+        if (!sq.exist) continue;
+        if (clickX > sq.x && clickX < sq.x + 50 && clickY > sq.y && clickY < sq.y + 50) {
+            // play tile clunk once
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.type = "square";
+            osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.02);
+            g.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.02);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.02);
+
+            isCorrect = (sq.symbol == mathAnswer);
+            resetting = true;
+
+            if (isCorrect) {
+                resultBgColor = "rgb(21, 255, 0)";
+                playCorrectSound();
+                setTimeout(() => {
+                    sq.exist = false;
+                    points += 1;
+                    resultBgColor = "rgb(65, 115, 138)";
+                    isCorrect = false;
+                    resetting = false;
+                    if (squares.some(s => s.exist)) createNumberToSolve();
+                }, 500);
+            } else {
+                resultBgColor = "rgb(255, 0, 0)";
+                playWrongSound();
+                setTimeout(() => {
+                    resultBgColor = "rgb(65, 115, 138)";
+                    isCorrect = false;
+                    resetting = false;
+                }, 500);
+            }
+
+            clickX = -1; clickY = -1;
+            break; // stop after first matching square
+        }
+    }
 });
 
 function randomSymbol() {
     let all = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, "+", "-", "*"];
     return all[Math.floor(Math.random() * all.length)];
+}
+
+function createMathQuestions(level = 1) {
+    // Determine difficulty and grid size from level
+    let difficulty = "easy";
+    if (level >= 8 && level <= 14) difficulty = "normal";
+    else if (level >= 15) difficulty = "hard";
+
+    // Set rows/columns based on difficulty
+    if (difficulty === "easy") {
+        rows = 1;
+        columns = 2;
+    } else if (difficulty === "normal") {
+        rows = 3;
+        columns = 3;
+    } else { // hard
+        rows = 5;
+        columns = 5;
+    }
+    
+    console.log("Level " + level + " (" + difficulty + "): " + rows + "x" + columns);
+    
+    let totalCells = rows * columns;
+    mathQuestions = [];
+
+
+    for (let i = 0; i < totalCells; i++) {
+        let numbers, operators;
+        
+        if (difficulty === "easy") {
+            numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+            operators = ["+", "-"];
+        } else if (difficulty === "normal") {
+            numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 20];
+            operators = ["+", "-", "*"];
+        } else { // hard
+            numbers = [5, 10, 15, 20, 25, 30, 50, 100];
+            operators = ["+", "-", "*"];
+        }
+        
+        const num1 = numbers[Math.floor(Math.random() * numbers.length)];
+        const num2 = numbers[Math.floor(Math.random() * numbers.length)];
+        const operator = operators[Math.floor(Math.random() * operators.length)];
+        let question = `${num1} ${operator} ${num2} = ?`;
+        let answer = eval(num1 + " " + operator + " " + num2);
+        console.log("Generated math question (" + difficulty + "): " + question);
+        mathQuestions.push({ question, answer });
+    }
 }
 
 let pointsScreen = function(x, y) {
@@ -137,8 +238,19 @@ let numberToSolveScreen = function(x, y, num) {
     ctx.shadowBlur = 0;
 }
 
-// make winning screen
+function resetGame() {
+    squares = [];
+    points = 0;
+    questionIdx = 0;
+    mathQuestion = "";
+    mathAnswer = 0;
+    isCorrect = false;
+    resetting = false;
+    resultBgColor = "rgb(65, 115, 138)";
+    mathQuestions = [];
+}
 
+// make winning screen
 let winningScreen = function() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -201,9 +313,7 @@ let winningScreen = function() {
     ctx.shadowBlur = 0;
 
     if (clickX > bx && clickX < bx + bw && clickY > by && clickY < by + bh) {
-        scene = "menu";
-        squares = [];
-        points = 0;
+        resetGame();
         clickX = -1; clickY = -1;
     }
 }
@@ -243,17 +353,6 @@ let resultScreen = function(x, y, text) {
     ctx.textBaseline = "middle";
     ctx.fillText(label, x + 70, y + 17);
     ctx.shadowBlur = 0;
-
-    if (symbolsClicked == 3) {
-        isCorrect = (resultText == numToSolve);
-        if (isCorrect) {
-            resultBgColor = "rgb(21, 255, 0)";
-            playCorrectSound();
-        } else {
-            resultBgColor = "rgb(255, 0, 0)";
-            playWrongSound();
-        }
-    }
 }
 
 // check to see when three symbols are clicked in a row, then evaluate the expression and update the result screen
@@ -265,123 +364,30 @@ let flickerOpacity = 100;
 let mathSquare = function(x, y, width, height, symbol) {
     const isOp = typeof symbol === "string";
     const isHover = mouseX > x && mouseX < x + width && mouseY > y && mouseY < y + height;
-    const isClicked = clickedSquares.some(c => c.x === x && c.y === y);
 
     // tile base color
     let baseColor = isOp ? "rgba(180, 120, 255, 0.15)" : "rgba(30, 60, 120, 0.6)";
     if (isHover) baseColor = isOp ? "rgba(180, 120, 255, 0.35)" : "rgba(60, 100, 200, 0.75)";
-    if (isClicked) baseColor = isOp ? "rgba(200, 140, 255, 0.45)" : "rgba(80, 140, 255, 0.6)";
 
-    // tile fill
     ctx.fillStyle = baseColor;
     ctx.fillRect(x, y, width, height);
 
-    // glowing border
-    if (clickX > x && clickX < x + width && clickY > y && clickY < y + height) {
-        // make a clunky sound when clicked for only a little bit of time
-
-        // main clunk oscillator
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        oscillator.type = "square";
-        oscillator.frequency.setValueAtTime(120, audioCtx.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.02);
-        gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.02);
-        oscillator.start(audioCtx.currentTime);
-        oscillator.stop(audioCtx.currentTime + 0.02);
-
-        const osc2 = audioCtx.createOscillator();
-        const gain2 = audioCtx.createGain();
-        osc2.connect(gain2);
-        gain2.connect(audioCtx.destination);
-        osc2.type = "sawtooth";
-        osc2.frequency.setValueAtTime(80, audioCtx.currentTime);
-        osc2.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.02);
-        gain2.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.02);
-        osc2.start(audioCtx.currentTime);
-        osc2.stop(audioCtx.currentTime + 0.02);
-
-
-        ctx.shadowColor = isOp ? "rgba(200, 140, 255, 0.9)" : "rgba(80, 180, 255, 0.9)";
-        ctx.shadowBlur = 10;
-        ctx.strokeStyle = isOp ? "rgba(200, 140, 255, 0.9)" : "rgba(80, 180, 255, 0.9)";
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(x, y, width, height);
-        ctx.shadowBlur = 0;
-    } else if (isHover) {
+    // border
+    if (isHover) {
+        ctx.shadowColor = isOp ? "rgba(180, 120, 255, 0.6)" : "rgba(80, 140, 255, 0.6)";
+        ctx.shadowBlur = 6;
         ctx.strokeStyle = isOp ? "rgba(180, 120, 255, 0.6)" : "rgba(80, 140, 255, 0.6)";
         ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, width, height);
     } else {
         ctx.strokeStyle = isOp ? "rgba(140, 80, 220, 0.3)" : "rgba(40, 80, 160, 0.4)";
         ctx.lineWidth = 0.5;
-        ctx.strokeRect(x, y, width, height);
     }
+    ctx.strokeRect(x, y, width, height);
+    ctx.shadowBlur = 0;
 
-    // click handling (unchanged logic)
-    if (clickX > x && clickX < x + width && clickY > y && clickY < y + height) {
-        if (symbolsClicked == 3) {
-            resultText = "";
-            symbolsClicked = 0;
-            showResult = false;
-        }
-        if (typeof symbol === "number" && symbolsClicked == 0 ||
-            symbolsClicked == 1 && typeof symbol === "string" ||
-            symbolsClicked == 2 && typeof symbol === "number") {
-            if (typeof symbol === "string") {
-                clickedSquares.push({x, y, width, height, exist: true});
-            } else {
-                clickedSquares.push({x, y, width, height, exist: false});
-            }
-            resultText += " " + symbol;
-            symbolsClicked++;
-        }
-        if (symbolsClicked == 3) {
-            resultText = eval(resultText);
-            isCorrect = (resultText == numToSolve);
-        }
-        clickX = -1;
-        clickY = -1;
-    }
-
-    if (isCorrect && symbolsClicked == 3 && !resetting) {
-        resetting = true;
-        setTimeout(() => {
-            clickedSquares = [];
-            resultText = "";
-            resultBgColor = "rgb(65, 115, 138)";
-            isCorrect = false;
-            points += 1;
-            symbolsClicked = 0;
-            resetting = false;
-            if (squares.some(sq => sq.exist)) createNumberToSolve();
-        }, 500);
-    }
-    if (!isCorrect && symbolsClicked == 3) {
-        setTimeout(() => {
-            resultText = "";
-            resultBgColor = "rgb(65, 115, 138)";
-            symbolsClicked = 0;
-        }, 500);
-    }
-    if (symbolsClicked == 3) {
-        if (isCorrect) {
-            for (let sq of squares) {
-                if (clickedSquares.some(c => c.x === sq.x && c.y === sq.y) && typeof sq.symbol === "number") {
-                    sq.exist = false;
-                }
-            }
-        }
-        if (!isCorrect && symbolsClicked == 3) clickedSquares = [];
-    }
-
-    // symbol text with glow
+    // symbol text
     ctx.shadowColor = isOp ? "rgba(200, 140, 255, 0.8)" : "rgba(120, 180, 255, 0.6)";
-    ctx.shadowBlur = isClicked ? 8 : 3;
+    ctx.shadowBlur = 3;
     ctx.fillStyle = isOp ? "rgb(220, 170, 255)" : "rgb(160, 200, 255)";
     ctx.font = isOp ? "bold 30px 'Courier New'" : "30px 'Courier New'";
     ctx.textAlign = "center";
@@ -444,125 +450,94 @@ let button = function(string, x, y, width, height, target) {
     }
 }
 
+
 let menu = function() {
-// deep space background
-ctx.fillStyle = "rgba(5, 8, 20, 1)";
-ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-// stars
-for (let i = 0; i < 160; i++) {
-    const sx = (i * 137.508) % canvas.width;
-    const sy = (i * 97.333) % canvas.height;
-    const size = i % 7 === 0 ? 1.8 : i % 3 === 0 ? 1.1 : 0.5;
-    const brightness = 0.2 + (i % 9) * 0.08;
-    ctx.fillStyle = `rgba(200, 220, 255, ${brightness})`;
-    ctx.beginPath();
-    ctx.arc(sx, sy, size, 0, Math.PI * 2);
-    ctx.fill();
-}
-
-// nebula glows
-ctx.save();
-const n1 = ctx.createRadialGradient(150, 200, 0, 150, 200, 220);
-n1.addColorStop(0, "rgba(80, 30, 180, 0.13)");
-n1.addColorStop(1, "rgba(80, 30, 180, 0)");
-ctx.fillStyle = n1; ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-const n2 = ctx.createRadialGradient(650, 400, 0, 650, 400, 200);
-n2.addColorStop(0, "rgba(20, 80, 200, 0.1)");
-n2.addColorStop(1, "rgba(20, 80, 200, 0)");
-ctx.fillStyle = n2; ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-const n3 = ctx.createRadialGradient(400, 500, 0, 400, 500, 160);
-n3.addColorStop(0, "rgba(0, 160, 120, 0.07)");
-n3.addColorStop(1, "rgba(0, 160, 120, 0)");
-ctx.fillStyle = n3; ctx.fillRect(0, 0, canvas.width, canvas.height);
-ctx.restore();
-
-// planet — large dim circle bottom right
-ctx.save();
-const planet = ctx.createRadialGradient(720, 560, 10, 700, 540, 130);
-planet.addColorStop(0, "rgba(40, 60, 140, 0.55)");
-planet.addColorStop(0.6, "rgba(20, 30, 80, 0.4)");
-planet.addColorStop(1, "rgba(10, 15, 40, 0)");
-ctx.fillStyle = planet;
-ctx.beginPath();
-ctx.arc(700, 550, 130, 0, Math.PI * 2);
-ctx.fill();
-// planet ring
-ctx.strokeStyle = "rgba(80, 120, 220, 0.2)";
-ctx.lineWidth = 8;
-ctx.beginPath();
-ctx.ellipse(700, 550, 180, 30, -0.3, 0, Math.PI * 2);
-ctx.stroke();
-ctx.restore();
-
-// title
-
-// flicker logic
-flickerTimer++;
-if (flickerTimer % 180 === 0) {
-    flickerOpacity = 0.2;
-} else if (flickerTimer % 180 < 8) {
-    flickerOpacity = (flickerTimer % 2 === 0) ? 0.2 : 1;
-} else {
-    flickerOpacity = 1;
-}
-
-// title
-ctx.shadowColor = `rgba(120, 180, 255, ${0.8 * flickerOpacity})`;
-ctx.shadowBlur = 18;
-ctx.fillStyle = `rgba(180, 215, 255, ${flickerOpacity})`;
-ctx.font = "bold 48px 'Courier New'";
-ctx.textAlign = "center";
-ctx.textBaseline = "middle";
-ctx.fillText("CROSSWIZZ", canvas.width / 2, 110);
-ctx.shadowBlur = 0;
-
-// subtitle
-ctx.fillStyle = "rgba(100, 140, 220, 0.7)";
-ctx.font = "11px 'Courier New'";
-ctx.fillText("S O L V E  ·  C L I C K  ·  S C O R E", canvas.width / 2, 148);
-    button("Start", canvas.width/ 2, canvas.height / 2 - 75, 150, 50, "game");
-    button("How", canvas.width / 2, canvas.height / 2, 150, 50, "menu");
-}
-
-let runGame = function() {
-    if (squares.length === 0) {
-        console.log("Initializing game...");
-        initGame();
-    }
-    // background for game area
+    // deep space background
     ctx.fillStyle = "rgba(5, 8, 20, 1)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // stars
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 160; i++) {
         const sx = (i * 137.508) % canvas.width;
         const sy = (i * 97.333) % canvas.height;
-        const size = i % 5 === 0 ? 1.5 : 0.7;
-        const brightness = 0.3 + (i % 7) * 0.1;
+        const size = i % 7 === 0 ? 1.8 : i % 3 === 0 ? 1.1 : 0.5;
+        const brightness = 0.2 + (i % 9) * 0.08;
         ctx.fillStyle = `rgba(200, 220, 255, ${brightness})`;
         ctx.beginPath();
         ctx.arc(sx, sy, size, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    // nebula glow patches
+    // nebula glows
     ctx.save();
-    const nebula1 = ctx.createRadialGradient(200, 300, 0, 200, 300, 180);
-    nebula1.addColorStop(0, "rgba(80, 40, 160, 0.12)");
-    nebula1.addColorStop(1, "rgba(80, 40, 160, 0)");
-    ctx.fillStyle = nebula1;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const n1 = ctx.createRadialGradient(150, 200, 0, 150, 200, 220);
+    n1.addColorStop(0, "rgba(80, 30, 180, 0.13)");
+    n1.addColorStop(1, "rgba(80, 30, 180, 0)");
+    ctx.fillStyle = n1; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const nebula2 = ctx.createRadialGradient(600, 200, 0, 600, 200, 200);
-    nebula2.addColorStop(0, "rgba(20, 80, 160, 0.1)");
-    nebula2.addColorStop(1, "rgba(20, 80, 160, 0)");
-    ctx.fillStyle = nebula2;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const n2 = ctx.createRadialGradient(650, 400, 0, 650, 400, 200);
+    n2.addColorStop(0, "rgba(20, 80, 200, 0.1)");
+    n2.addColorStop(1, "rgba(20, 80, 200, 0)");
+    ctx.fillStyle = n2; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const n3 = ctx.createRadialGradient(400, 500, 0, 400, 500, 160);
+    n3.addColorStop(0, "rgba(0, 160, 120, 0.07)");
+    n3.addColorStop(1, "rgba(0, 160, 120, 0)");
+    ctx.fillStyle = n3; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
 
+    // planet — large dim circle bottom right
+    ctx.save();
+    const planet = ctx.createRadialGradient(720, 560, 10, 700, 540, 130);
+    planet.addColorStop(0, "rgba(40, 60, 140, 0.55)");
+    planet.addColorStop(0.6, "rgba(20, 30, 80, 0.4)");
+    planet.addColorStop(1, "rgba(10, 15, 40, 0)");
+    ctx.fillStyle = planet;
+    ctx.beginPath();
+    ctx.arc(700, 550, 130, 0, Math.PI * 2);
+    ctx.fill();
+    // planet ring
+    ctx.strokeStyle = "rgba(80, 120, 220, 0.2)";
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.ellipse(700, 550, 180, 30, -0.3, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // title
+
+    // flicker logic
+    flickerTimer++;
+    if (flickerTimer % 180 === 0) {
+        flickerOpacity = 0.2;
+    } else if (flickerTimer % 180 < 8) {
+        flickerOpacity = (flickerTimer % 2 === 0) ? 0.2 : 1;
+    } else {
+        flickerOpacity = 1;
+    }
+
+    // title
+    ctx.shadowColor = `rgba(120, 180, 255, ${0.8 * flickerOpacity})`;
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = `rgba(180, 215, 255, ${flickerOpacity})`;
+    ctx.font = "bold 48px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("CROSSWIZZ", canvas.width / 2, 110);
+    ctx.shadowBlur = 0;
+
+    // subtitle
+    ctx.fillStyle = "rgba(100, 140, 220, 0.7)";
+    ctx.font = "11px 'Courier New'";
+    ctx.fillText("S O L V E  ·  C L I C K  ·  S C O R E", canvas.width / 2, 148);
+        button("Start", canvas.width/ 2, canvas.height / 2 - 75, 150, 50, "levelSelect");
+        button("How", canvas.width / 2, canvas.height / 2, 150, 50, "menu");
+}
+
+let levelSelector = function(level) {
+    ctx.fillStyle = "rgba(5, 8, 20, 1)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
     // back button
     const bx = 30, by = 20, bw = 80, bh = 30;
     const bHover = mouseX > bx && mouseX < bx + bw && mouseY > by && mouseY < by + bh;
@@ -584,21 +559,151 @@ let runGame = function() {
     ctx.shadowBlur = 0;
 
     if (clickX > bx && clickX < bx + bw && clickY > by && clickY < by + bh) {
+        resetGame();
         scene = "menu";
         clickX = -1; clickY = -1;
+        selectedLevel = 0;
     }
 
-    numberToSolveScreen(canvas.width/2 - 50, canvas.height/2 - 230, numToSolve);
+    // level preview
+    let levelPrev = function(levelNum, x, y) {
+        const isHover = mouseX > x && mouseX < x + 100 && mouseY > y && mouseY < y + 100;
+    
+        // outer glow background (brighter on hover)
+        ctx.shadowColor = isHover ? "rgba(100, 255, 200, 0.9)" : "rgba(60, 255, 150, 0.6)";
+        ctx.shadowBlur = isHover ? 30 : 20;
+        ctx.fillStyle = isHover ? "rgba(20, 50, 100, 0.95)" : "rgba(15, 35, 80, 0.8)";
+        ctx.fillRect(x - 2, y - 2, 104, 104);
+        
+        // main tile background with gradient (brighter on hover)
+        const grad = ctx.createLinearGradient(x, y, x + 100, y + 100);
+        if (isHover) {
+            grad.addColorStop(0, "rgba(120, 180, 255, 0.6)");
+            grad.addColorStop(1, "rgba(100, 150, 220, 0.8)");
+        } else {
+            grad.addColorStop(0, "rgba(80, 140, 200, 0.4)");
+            grad.addColorStop(1, "rgba(60, 100, 160, 0.6)");
+        }
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, y, 100, 100);
+
+        // glowing border (thicker on hover)
+        ctx.shadowColor = isHover ? "rgba(150, 255, 200, 0.9)" : "rgba(100, 200, 255, 0.8)";
+        ctx.shadowBlur = isHover ? 18 : 10;
+        ctx.strokeStyle = isHover ? "rgba(150, 255, 200, 0.95)" : "rgba(120, 180, 255, 0.7)";
+        ctx.lineWidth = isHover ? 3 : 2;
+        ctx.strokeRect(x, y, 100, 100);
+        ctx.shadowBlur = 0;
+
+        // inner dark panel
+        ctx.fillStyle = isHover ? "rgba(15, 30, 70, 0.95)" : "rgba(10, 20, 50, 0.9)";
+        ctx.fillRect(x + 15, y + 15, 70, 70);
+
+        // inner border
+        ctx.strokeStyle = isHover ? "rgba(120, 180, 255, 0.7)" : "rgba(80, 140, 200, 0.5)";
+        ctx.lineWidth = isHover ? 1.5 : 1;
+        ctx.strokeRect(x + 15, y + 15, 70, 70);
+
+        // glowing text (brighter on hover)
+        ctx.shadowColor = isHover ? "rgba(200, 255, 255, 0.95)" : "rgba(100, 200, 255, 0.9)";
+        ctx.shadowBlur = isHover ? 16 : 12;
+        ctx.fillStyle = isHover ? "rgb(200, 255, 255)" : "rgb(180, 220, 255)";
+        ctx.font = isHover ? "bold 44px 'Courier New'" : "bold 40px 'Courier New'";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(" " + levelNum + " ", x + 50, y + 50);
+        ctx.shadowBlur = 0;
+
+        // Click detection
+        if (clickX > x && clickX < x + 100 && clickY > y && clickY < y + 100) {
+            selectedLevel = levelNum;
+            console.log("Level " + levelNum + " selected!");
+            scene = "game"; // transition to game with selected level
+            clickX = -1;
+            clickY = -1;
+        }
+    }
+
+    for (let row = 0; row < Math.ceil(levelCount / 5); row++) {
+        for (let i = 0; i < 5 && (row * 5 + i) < levelCount; i++) {
+            const levelNum = row * 5 + i + 1;
+            // console.log("levelNum: " + levelNum);
+            levelPrev(levelNum, 100 + (i * 130), 80 + (row * 120));
+        }
+    }
+}
+
+let createLevel = function() {
+    if (squares.length === 0) {
+        console.log("Initializing game for level " + selectedLevel + "...");
+        resetGame();
+        initGame();
+    }
+    
+    // background for game area
+    ctx.fillStyle = "rgba(5, 8, 20, 1)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // DEBUG: Show current grid info
+    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.font = "14px 'Courier New'";
+    ctx.textAlign = "left";
+    // ctx.fillText("Level: " + selectedLevel + " | Grid: " + rows + "x" + columns, 200, 80);
+    // stars
+    for (let i = 0; i < 120; i++) {
+        const sx = (i * 137.508) % canvas.width;
+        const sy = (i * 97.333) % canvas.height;
+        const size = i % 5 === 0 ? 1.5 : 0.7;
+        const brightness = 0.3 + (i % 7) * 0.1;
+        ctx.fillStyle = `rgba(200, 220, 255, ${brightness})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    // nebula glow patches
+    ctx.save();
+    const nebula1 = ctx.createRadialGradient(200, 300, 0, 200, 300, 180);
+    nebula1.addColorStop(0, "rgba(80, 40, 160, 0.12)");
+    nebula1.addColorStop(1, "rgba(80, 40, 160, 0)");
+    ctx.fillStyle = nebula1;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const nebula2 = ctx.createRadialGradient(600, 200, 0, 600, 200, 200);
+    nebula2.addColorStop(0, "rgba(20, 80, 160, 0.1)");
+    nebula2.addColorStop(1, "rgba(20, 80, 160, 0)");
+    ctx.fillStyle = nebula2;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    // back button
+    const bx = 30, by = 20, bw = 80, bh = 30;
+    const bHover = mouseX > bx && mouseX < bx + bw && mouseY > by && mouseY < by + bh;
+    ctx.fillStyle = bHover ? "rgba(80, 120, 255, 0.3)" : "rgba(30, 50, 120, 0.4)";
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = bHover ? "rgba(120, 160, 255, 0.9)" : "rgba(80, 100, 200, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.shadowColor = "rgba(100, 150, 255, 0.8)";
+    ctx.shadowBlur = bHover ? 10 : 4;
+    ctx.fillStyle = bHover ? "rgb(180, 210, 255)" : "rgb(120, 160, 255)";
+    ctx.font = "13px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("← BACK", bx + bw / 2, by + bh / 2);
+    ctx.shadowBlur = 0;
+    if (clickX > bx && clickX < bx + bw && clickY > by && clickY < by + bh) {
+        resetGame()
+        scene = "menu";
+        selectedLevel = 0;
+        clickX = -1; clickY = -1;
+        console.log("menu")
+    }
+    numberToSolveScreen(canvas.width/2 - 50, canvas.height/2 - 230, mathQuestion);
+    // console.log("mathQuestion: " + mathQuestion + ", numToSolve: " + numToSolve);
     pointsScreen(canvas.width/2 - 190, canvas.height/2 - 230);
     resultScreen(canvas.width/2 - 50, canvas.height/2 - 170, resultText);
-
     let allSymbols = squares.filter(sq => sq.exist).map(sq => sq.symbol);
     let numbers = allSymbols.filter(sym => typeof sym === "number");
+    // console.log("numbers.length: " + numbers.length)
     // apply blur to everything drawn after this point if game is won
-    if (numbers.length <= 2) {
-        ctx.filter = "blur(4px)";
-    }
-
     let output = ""
     for (let sq of squares) {
         if (sq.exist) {
@@ -607,60 +712,83 @@ let runGame = function() {
         }
     }
     // if points = number of symbols, then display winning screen
-    console.log("numbers left: " + numbers.length);
-    if (numbers.length <= 2) {
+    // console.log("numbers left: " + numbers.length);
+    if (numbers.length == 0) {
+        ctx.filter = "blur(4px)";
         console.log("No more symbols left, you win!");
         ctx.filter = "none";
         winningScreen();
     }
 }
+
+let runGame = function() {
+    if (selectedLevel == 0) {
+        levelSelector()
+    }
+
+    if (selectedLevel >= 1) {
+        createLevel();
+    }
+}
 // because the game runs the functions in the game loop many times, we want to run this code only when the game is initialized, 
 // so that the number to solve doesn't change every frame.
+let questionIdx = 0;
 function createNumberToSolve() {
-    let allSymbols = squares.filter(sq => sq.exist).map(sq => sq.symbol);
-    let numbers = allSymbols.filter(sym => typeof sym === "number");
-    let operators = allSymbols.filter(sym => typeof sym === "string");
-
-    console.log("operators.length: " + operators.length + ", numbers.length: " + numbers.length);
-    if (operators.length > 0) {
-        let num1 = numbers[Math.floor(Math.random() * numbers.length)];
-        let num2 = numbers[Math.floor(Math.random() * numbers.length)];
-        let operator = operators[Math.floor(Math.random() * operators.length)];
-        numToSolve = Math.round(eval(num1 + " " + operator + " " + num2));
-        console.log("can solve number: " + numToSolve + " with: " + num1 + " " + operator + " " + num2);
+    if (questionIdx < mathQuestions.length) {
+        mathQuestion = mathQuestions[questionIdx].question;
+        mathAnswer = mathQuestions[questionIdx].answer;
+        questionIdx++;
+    } else {
+        console.warn("No more questions available!");
+        mathQuestion = "Complete!";
+        mathAnswer = 0;
     }
 }
 
 function initGame() {
-    let rows = 5;
-    let columns = 4;
-    let totalCells = rows * columns;
-    let numOperators = Math.round(totalCells * 0.15);
-    let symbols = [];
+    let idx = 0;
+    questionIdx = 0;
+    // Reset and create questions based on selected level
+    createMathQuestions(selectedLevel);
+    console.log("rows: " + rows, " columns: " + columns)
 
-    let operatorPool = ["+", "-", "*"];
-    for (let i = 0; i < numOperators; i++) {
-        symbols.push(operatorPool[i % operatorPool.length]);
+    // collect answers and shuffle them
+    let answers = mathQuestions.map(q => q.answer);
+    for (let i = answers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [answers[i], answers[j]] = [answers[j], answers[i]];
     }
 
-    if (isCorrect) {
-        points += 1;
+    // Create grid with proper spacing
+
+    // Set positioning based on grid size
+    let startX, startY;
+    
+    if (rows === 1 && columns === 2) {
+        startX = 350;
+        startY = 200;
+    } else if (rows === 3 && columns === 3) {
+        startX = 300;
+        startY = 200;
+    } else if (rows === 5 && columns === 5) {
+        startX = 230;
+        startY = 200;
     }
-    if (points == 0) {
-        while (symbols.length < totalCells) {
-            let s = randomSymbol();
-            if (typeof s === "number") symbols.push(s); // only add numbers to fill remaining slots
+    const spacingX = 80;
+    const spacingY = 80;
+
+    for (let i = 0; i < rows; i++) {
+        for (let j = 0; j < columns; j++) {
+            squares.push({ 
+                x: startX + j * spacingX, 
+                y: startY + i * spacingY, 
+                symbol: answers[idx], 
+                exist: true 
+            });
+            idx++;
         }
-        symbols.sort(() => Math.random() - 0.5); // shuffle
-
-        let idx = 0;
-        for (let i = 0; i < rows; i++) {
-            for (let j = 0; j < columns; j++) {
-                squares.push({x: 300 + j * 60, y: 220 + i * 60, symbol: symbols[idx++], exist: true});
-            }
-        }
     }
-    createNumberToSolve();  // ← call the renamed function
+    createNumberToSolve();
 }
 
 function gameLoop() {
@@ -668,7 +796,7 @@ function gameLoop() {
     if (scene === "menu") {
         menu();
     }
-    if (scene === "game") {
+    if (scene === "levelSelect" || scene === "game") {
         runGame();
     }
     requestAnimationFrame(gameLoop);
