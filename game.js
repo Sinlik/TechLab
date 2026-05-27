@@ -14,6 +14,9 @@ let text = function(string, x, y, px) {
     ctx.fillText(text, x, y);
 }
 
+// create a save JSON file
+const SAVE_KEY = "crosswizz_save"
+
 let mouseX = 0;
 let mouseY = 0;
 let clickX = 0;
@@ -32,7 +35,7 @@ let symbolsClicked = 0;
 
 let levelCount = 20;
 let selectedLevel = 0;
-let unlockedUpTo = 20
+let unlockedUpTo = 1
 
 // locked variables
 let shakeLevel = 0;
@@ -99,6 +102,87 @@ canvas.addEventListener('mousemove', function(event) {
     mouseX = event.clientX - rect.left;
     mouseY = event.clientY - rect.top;
 });
+let combo = 0;
+let comboParticles = []; // active floating combo texts
+
+function playLossComboAnimation() {
+    if (combo === 0) return;
+    const targetX = canvas.width / 2 + 20;
+    const targetY = canvas.height / 2 - 230;
+
+    comboParticles.push({
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        targetX,
+        targetY,
+        text: "x" + combo + "  LOST",
+        alpha: 1.0,
+        scale: 1.2,
+        color: "255, 80, 120",
+        loss: true,
+        life: 0,
+        maxLife: 200   // slower
+    });
+}
+
+function playComboAnimation() {
+    const targetX = canvas.width / 2 + 20;
+    const targetY = canvas.height / 2 - 230;
+
+    comboParticles.push({
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        targetX,
+        targetY,
+        text: combo >= 2 ? "x" + combo + "  COMBO" : "CORRECT",
+        alpha: 1.0,
+        scale: combo >= 3 ? 1.4 : 1.0,
+        color: combo >= 5 ? "255, 200, 80"
+             : combo >= 3 ? "180, 120, 255"
+             :              "80, 255, 160",
+        loss: false,
+        life: 0,
+        maxLife: 200   // slower
+    });
+}
+
+function updateComboParticles() {
+    for (let i = comboParticles.length - 1; i >= 0; i--) {
+        const p = comboParticles[i];
+        p.life++;
+
+        // move toward target (lerp)
+        p.x += (p.targetX - p.x) * 0.08;
+        p.y += (p.targetY - p.y) * 0.08;
+
+        // fade out in second half of life
+        if (p.life > p.maxLife * 0.5) {
+            p.alpha = 1 - (p.life - p.maxLife * 0.5) / (p.maxLife * 0.5);
+        }
+
+        if (p.life >= p.maxLife) {
+            comboParticles.splice(i, 1);
+            continue;
+        }
+
+        // draw
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+
+        const fontSize = Math.round(14 * p.scale);
+        ctx.font = `bold ${fontSize}px 'Courier New'`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        ctx.shadowColor = `rgba(${p.color}, 0.9)`;
+        ctx.shadowBlur = p.loss ? 12 : 8;
+        ctx.fillStyle = `rgba(${p.color}, 1)`;
+        ctx.fillText(p.text, p.x, p.y);
+        ctx.shadowBlur = 0;
+
+        ctx.restore();
+    }
+}
 
 canvas.addEventListener('click', function(event) {
     let rect = canvas.getBoundingClientRect();
@@ -125,17 +209,19 @@ canvas.addEventListener('click', function(event) {
             resetting = true;
 
             if (isCorrect) {
+                combo++
+                playComboAnimation()
                 resultBgColor = "rgb(21, 255, 0)";
                 playCorrectSound();
                 setTimeout(() => {
                     sq.hitsLeft -= 1;
                     if (sq.hitsLeft <= 0) {
-                        sq.exist = false;    // tile disappears only when all hits used
+                        sq.exist = false;
                     } else {
-                        // generate a new question for this tile's next required answer
-                        // advance questionIdx so a new question becomes the target
+                        const nextHitIdx = sq.hitsRequired - sq.hitsLeft;
+                        sq.symbol = sq.questions[nextHitIdx].answer;
                     }
-                    points += 1;
+                    points += 1 * combo;
                     resultBgColor = "rgb(65, 115, 138)";
                     isCorrect = false;
                     resetting = false;
@@ -143,6 +229,11 @@ canvas.addEventListener('click', function(event) {
                         createNumberToSolve(); // only move to next prompt when correct
                 }, 500);
             } else {
+                playLossComboAnimation()
+                combo = 0
+                playerHealth--;
+                loseHeart();
+                if (playerHealth <= 0) gameOver = true;
                 resultBgColor = "rgb(255, 0, 0)";
                 playWrongSound();
                 setTimeout(() => {
@@ -297,10 +388,7 @@ function createMathQuestions(level = 1) {
     const totalCells = rows * columns;
     mathQuestions = [];
 
-    for (let i = 0; i < totalCells; i++) {
-        const type = getTileType(level);
-        const hitsRequired = type === "blue" ? 1 : type === "orange" ? 2 : 3;
-
+    function generateQuestion() {
         let num1, num2, operator, answer;
         do {
             num1     = config.nums[Math.floor(Math.random() * config.nums.length)];
@@ -308,15 +396,22 @@ function createMathQuestions(level = 1) {
             operator = config.ops[Math.floor(Math.random() * config.ops.length)];
             answer   = operator === '*' ? num1 * num2
                        : operator === '+' ? num1 + num2
-                       :                     num1 - num2;
+                       :                    num1 - num2;
         } while (answer <= 0 || !Number.isInteger(answer));
+        return { question: `${num1} ${operator} ${num2} = ?`, answer };
+    }
 
-        // One expression per tile
-        const question = `${num1} ${operator} ${num2} = ?`;
+    for (let i = 0; i < totalCells; i++) {
+        const type = getTileType(level);
+        const hitsRequired = type === "blue" ? 1 : type === "orange" ? 2 : 3;
+
+        // Generate one unique question per required hit
+        const questions = Array.from({ length: hitsRequired }, generateQuestion);
 
         mathQuestions.push({
-            question,
-            answer,
+            questions,        // array of { question, answer } — one per hit
+            answer: questions[0].answer,
+            question: questions[0].question,
             type,
             hitsRequired
         });
@@ -367,23 +462,23 @@ let numberToSolveScreen = function(x, y, num) {
 
 function resetGame() {
     squares = [];
-    tiles = []
-    prompts = []
+    tiles = [];
     points = 0;
-    questionIdx = 0;
     mathQuestion = "";
     mathAnswer = 0;
     isCorrect = false;
     resetting = false;
+    combo = 0;
+    playerHealth = 3;
     resultBgColor = "rgb(65, 115, 138)";
     mathQuestions = [];
-    howToShown = false;  // <-- add this
-    howToTimer = 0;      // <-- add this
-
+    howToShown = false;
+    howToTimer = 0;
 }
 
 // make winning screen
 let winningScreen = function() {
+    saveGame()
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -531,10 +626,6 @@ let mathSquare = function(x, y, width, height, symbol, type, hitsLeft) {
         textColor  = "rgb(160, 200, 255)";
     }
 
-    // // tile base color
-    // let baseColor = isOp ? "rgba(180, 120, 255, 0.15)" : "rgba(30, 60, 120, 0.6)";
-    // if (isHover) baseColor = isOp ? "rgba(180, 120, 255, 0.35)" : "rgba(60, 100, 200, 0.75)";
-
     ctx.fillStyle = isHover ? hoverColor : baseColor;
     ctx.fillRect(x, y, width, height);
 
@@ -627,6 +718,7 @@ let button = function(string, x, y, width, height, target) {
 
 
 let menu = function() {
+    readGame()
     // deep space background
     ctx.fillStyle = "rgba(5, 8, 20, 1)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -707,6 +799,8 @@ let menu = function() {
     ctx.fillText("S O L V E  ·  C L I C K  ·  S C O R E", canvas.width / 2, 148);
     button("Start", canvas.width/ 2, canvas.height / 2 - 75, 150, 50, "levelSelect");
     button("How", canvas.width / 2, canvas.height / 2, 150, 50, "how");
+    button("Save", canvas.width / 2, canvas.height / 2 + 75, 150, 50, "saveGame")
+    button("Reset Session", canvas.width / 2, canvas.height / 2 + 150, 150, 50, "resetSession")
 }
 
 let levelSelector = function(level) {
@@ -887,6 +981,152 @@ let displayLevelNum = function(x, y) {
     ctx.shadowBlur = 0;
 }
 
+let playerHealth = 3;
+const MAX_HEALTH = 3;
+
+heartAnimations = []; // track per-heart animations
+
+function loseHeart() {
+    const lostIndex = playerHealth; // index of heart just lost (already decremented)
+    heartAnimations[lostIndex] = { shake: 8, flash: 1.0 }; // shake frames, flash opacity
+}
+
+function drawHeart(cx, cy, size, filled, anim) {
+    // apply shake offset
+    let ox = 0;
+    if (anim && anim.shake > 0) {
+        ox = Math.sin(anim.shake * 2.2) * 4;
+        anim.shake -= 1;
+    }
+    // flash alpha override for the moment of loss
+    let flashAlpha = 1;
+    if (anim && anim.flash > 0) {
+        flashAlpha = anim.flash;
+        anim.flash = Math.max(0, anim.flash - 0.04); // fade over ~25 frames
+    }
+
+    ctx.save();
+    ctx.translate(ox, 0);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + size * 0.3);
+    ctx.bezierCurveTo(cx, cy, cx - size * 0.5, cy, cx - size * 0.5, cy - size * 0.25);
+    ctx.bezierCurveTo(cx - size * 0.5, cy - size * 0.6, cx, cy - size * 0.6, cx, cy - size * 0.25);
+    ctx.bezierCurveTo(cx, cy - size * 0.6, cx + size * 0.5, cy - size * 0.6, cx + size * 0.5, cy - size * 0.25);
+    ctx.bezierCurveTo(cx + size * 0.5, cy, cx, cy, cx, cy + size * 0.3);
+    ctx.closePath();
+
+    if (filled) {
+        ctx.fillStyle = `rgba(255, 80, 120, ${flashAlpha})`;
+        ctx.shadowColor = `rgba(255, 80, 120, ${0.8 * flashAlpha})`;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = `rgba(255, 120, 150, ${0.9 * flashAlpha})`;
+    } else {
+        // just-lost heart: briefly flashes white then settles to empty
+        if (anim && anim.flash > 0) {
+            ctx.fillStyle = `rgba(255, 200, 220, ${anim.flash * 0.6})`;
+        } else {
+            ctx.fillStyle = "rgba(255, 80, 120, 0.12)";
+        }
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255, 80, 120, 0.3)";
+    }
+
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+}
+
+function healthScreen(x, y) {
+    const w = 120, h = 34;
+
+    ctx.fillStyle = "rgba(15, 25, 60, 0.6)";
+    ctx.fillRect(x, y, w, h);
+
+    ctx.shadowColor = "rgba(255, 80, 120, 0.5)";
+    ctx.shadowBlur = 6;
+    ctx.strokeStyle = "rgba(255, 80, 120, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+    ctx.shadowBlur = 0;
+
+    const heartSize = 10;
+    const spacing = 30;
+    const startX = x + 22;
+    const cy = y + h / 2;
+
+    for (let i = 0; i < MAX_HEALTH; i++) {
+        drawHeart(startX + i * spacing, cy, heartSize, i < playerHealth, heartAnimations[i]);
+    }
+}
+
+let gameOver = false;
+
+function gameOverScreen() {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+
+    ctx.fillStyle = "rgba(15, 25, 60, 0.9)";
+    ctx.fillRect(cx - 200, cy - 80, 400, 180);
+
+    ctx.shadowColor = "rgba(255, 80, 120, 0.6)";
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = "rgba(255, 80, 120, 0.5)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - 200, cy - 80, 400, 180);
+    ctx.shadowBlur = 0;
+
+    ctx.shadowColor = "rgba(255, 100, 140, 0.9)";
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "rgb(255, 100, 140)";
+    ctx.font = "bold 28px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("MISSION FAILED", cx, cy - 30);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = "rgba(100, 150, 255, 0.8)";
+    ctx.font = "13px 'Courier New'";
+    ctx.fillText("SCORE  " + points + "  PTS", cx, cy + 10);
+
+    ctx.strokeStyle = "rgba(255, 80, 120, 0.2)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - 120, cy + 32);
+    ctx.lineTo(cx + 120, cy + 32);
+    ctx.stroke();
+
+    const bx = cx - 100, by = cy + 48, bw = 200, bh = 36;
+    const bHover = mouseX > bx && mouseX < bx + bw && mouseY > by && mouseY < by + bh;
+
+    ctx.fillStyle = bHover ? "rgba(60, 100, 220, 0.4)" : "rgba(15, 25, 80, 0.6)";
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.shadowColor = bHover ? "rgba(100, 160, 255, 0.9)" : "rgba(60, 100, 200, 0.4)";
+    ctx.shadowBlur = bHover ? 12 : 5;
+    ctx.strokeStyle = bHover ? "rgba(140, 190, 255, 0.9)" : "rgba(60, 100, 200, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = bHover ? "rgb(200, 225, 255)" : "rgb(120, 170, 255)";
+    ctx.font = "12px 'Courier New'";
+    ctx.fillText("TRY AGAIN", cx, by + 18);
+
+    if (clickX > bx && clickX < bx + bw && clickY > by && clickY < by + bh) {
+        gameOver = false;
+        playerHealth = MAX_HEALTH;
+        heartAnimations = [];
+        resetGame();
+        // stay on same level
+        selectedLevel = selectedLevel;
+        clickX = -1; clickY = -1;
+    }
+}
+
+
 const LEVEL_HOWTO = {
     1:  "2 tiles · Add or subtract numbers up to 5.",
     2:  "4 tiles · Same rules, a bit more to solve!",
@@ -1003,6 +1243,10 @@ function howTo() {
 
 
 let createLevel = function() {
+    if (gameOver) {
+        gameOverScreen();
+        return;
+    }
     if (!howToShown) {
         howTo()
         return;
@@ -1074,6 +1318,7 @@ let createLevel = function() {
     resultScreen(canvas.width/2 - 50, canvas.height/2 - 170, resultText);
     // let allSymbols = squares.filter(sq => sq.exist).map(sq => sq.symbol);
     displayLevelNum(canvas.width/2 - 190, canvas.height/2 - 170)
+    healthScreen(canvas.width/2 + 110, canvas.height/2 - 230);
     // let numbers = allSymbols.filter(sym => typeof sym === "number");
 
     // apply blur to everything drawn after this point if game is won
@@ -1087,6 +1332,12 @@ let createLevel = function() {
     // if points = number of symbols, then display winning screen
     // console.log("numbers left: " + numbers.length);
     // Win condition: no more tiles
+    updateComboParticles();
+
+    if (!tiles.some(t => t.exist)) {
+        winningScreen();
+    }
+
     if (!tiles.some(t => t.exist)) {
         console.log("No more tiles left, you win!");
         winningScreen();
@@ -1106,23 +1357,26 @@ let runGame = function() {
 // so that the number to solve doesn't change every frame.
 let questionIdx = 0;
 function createNumberToSolve() {
-    if (questionIdx < prompts.length) {
-        mathQuestion = prompts[questionIdx].question;
-        mathAnswer   = prompts[questionIdx].answer;
-        questionIdx++;
-    } else {
-        mathQuestion = "Complete!";
-        mathAnswer   = 0;
-    }
+    const activeTiles = tiles.filter(t => t.exist);
+    if (activeTiles.length === 0) return;
 
+    // Pick a random currently-visible tile and ask for its current symbol
+    const tile = activeTiles[Math.floor(Math.random() * activeTiles.length)];
+
+    // Find which hit we're on for this tile
+    const hitIdx = tile.hitsRequired - tile.hitsLeft;
+    const q = tile.questions[hitIdx];
+
+    mathQuestion = q.question;
+    mathAnswer   = tile.symbol; // always matches what's displayed
 }
+
 
 let tiles = []
 let prompts = []
 
 function initGame() {
     tiles = [];
-    prompts = [];
     createMathQuestions(selectedLevel);
 
     const TILE_SIZE = 50;
@@ -1149,16 +1403,15 @@ function initGame() {
             tiles.push({
                 x: startX + j * SPACING_X,
                 y: startY + i * SPACING_Y,
-                symbol: q.answer,
+                symbol: q.questions[0].answer,   // shows current hit's answer
                 exist: true,
                 type: q.type,
                 hitsRequired: q.hitsRequired,
-                hitsLeft: q.hitsRequired
+                hitsLeft: q.hitsRequired,
+                questions: q.questions           // full list of questions for this tile
             });
 
-            for (let h = 0; h < q.hitsRequired; h++) {
-                prompts.push({ question: q.question, answer: q.answer });
-            }
+            createNumberToSolve()
         }
     }
 
@@ -1166,6 +1419,35 @@ function initGame() {
     questionIdx = 0;
     createNumberToSolve();
 }
+
+function saveGame() {
+    const data = {
+        unlockedUpTo: unlockedUpTo,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+}
+
+function readGame() {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return; // no save yet, keep defaults
+
+    try {
+        const data = JSON.parse(raw);
+        if (data.unlockedUpTo) unlockedUpTo = data.unlockedUpTo;
+    } catch (e) {
+        console.warn("Save data corrupted, resetting.", e);
+        localStorage.removeItem(SAVE_KEY);
+    }
+}
+
+console.log(unlockedUpTo)
+
+function resetSession() {
+    unlockedUpTo = 1;
+    selectedLevel = 0;
+    localStorage.removeItem(SAVE_KEY);
+}
+
 
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1177,6 +1459,14 @@ function gameLoop() {
     }
     if (scene === "how") {
         runHow()
+    }
+    if (scene === "saveGame") {
+        saveGame()
+        menu()
+    }
+    if (scene === "resetSession") {
+        resetSession()
+        menu()
     }
     requestAnimationFrame(gameLoop);
 }
