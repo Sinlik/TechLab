@@ -43,6 +43,25 @@ let shakeTimer = 0;
 
 let rows = 1;
 let columns = 2;
+
+let currentUserFirebase = "";
+let currentEmailFirebase = "";
+
+auth.onAuthStateChanged(async (user) => {
+    if (user) {
+        const doc = await db.collection("users").doc(user.uid).get();
+        if (doc.exists) {
+            const data = doc.data();
+            currentUserFirebase = data.username || "";
+            currentEmailFirebase = data.email || "";
+        }
+    } else {
+        currentUserFirebase = "";
+        currentEmailFirebase = "";
+    }
+});
+
+
 function playCorrectSound() {
     const osc1 = audioCtx.createOscillator();
     const gain1 = audioCtx.createGain();
@@ -797,6 +816,7 @@ let menu = function() {
     ctx.fillStyle = "rgba(100, 140, 220, 0.7)";
     ctx.font = "11px 'Courier New'";
     ctx.fillText("S O L V E  ·  C L I C K  ·  S C O R E", canvas.width / 2, 148);
+    button("Hub", canvas.width/ 2 - 275, canvas.height / 2 - 225, 150, 50, "hub");
     button("Start", canvas.width/ 2, canvas.height / 2 - 75, 150, 50, "levelSelect");
     button("How", canvas.width / 2, canvas.height / 2, 150, 50, "how");
     button("Save", canvas.width / 2, canvas.height / 2 + 75, 150, 50, "saveGame")
@@ -1420,23 +1440,46 @@ function initGame() {
     createNumberToSolve();
 }
 
-function saveGame() {
-    const data = {
-        unlockedUpTo: unlockedUpTo,
-    };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+async function saveGame() {
+    const user = auth.currentUser;
+    if (!user) {
+        // fallback to localStorage if not logged in
+        localStorage.setItem(SAVE_KEY, JSON.stringify({ unlockedUpTo }));
+        return;
+    }
+    try {
+        await db.collection("users").doc(user.uid).update({
+            unlockedUpTo: unlockedUpTo
+        });
+        console.log("Game saved to Firebase.");
+    } catch (e) {
+        console.warn("Firebase save failed, falling back to localStorage.", e);
+        localStorage.setItem(SAVE_KEY, JSON.stringify({ unlockedUpTo }));
+    }
 }
 
-function readGame() {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return; // no save yet, keep defaults
-
+async function readGame() {
+    const user = auth.currentUser;
+    if (!user) {
+        // fallback to localStorage
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return;
+        try {
+            const data = JSON.parse(raw);
+            if (data.unlockedUpTo) unlockedUpTo = data.unlockedUpTo;
+        } catch (e) {
+            localStorage.removeItem(SAVE_KEY);
+        }
+        return;
+    }
     try {
-        const data = JSON.parse(raw);
-        if (data.unlockedUpTo) unlockedUpTo = data.unlockedUpTo;
+        const doc = await db.collection("users").doc(user.uid).get();
+        if (doc.exists) {
+            const data = doc.data();
+            if (data.unlockedUpTo) unlockedUpTo = data.unlockedUpTo;
+        }
     } catch (e) {
-        console.warn("Save data corrupted, resetting.", e);
-        localStorage.removeItem(SAVE_KEY);
+        console.warn("Firebase read failed.", e);
     }
 }
 
@@ -1448,9 +1491,76 @@ function resetSession() {
     localStorage.removeItem(SAVE_KEY);
 }
 
+function userProfileCard(username, password, x, y, w, h) {
+    const bx = x - w / 2, by = y - h / 2;
+
+    ctx.save();
+
+    // shadow
+    ctx.shadowColor = "rgba(0, 0, 0, 0.18)";
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 4;
+
+    // card background
+    ctx.fillStyle = "#E9E9E9";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, w, h, 28);
+    ctx.fill();
+
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    // border
+    ctx.strokeStyle = "#173540";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, w, h, 28);
+    ctx.stroke();
+
+    // avatar circle
+    const r = Math.min(h * 0.28, 60);
+    const cx = bx + 95;
+    const cy = by + h / 2;
+
+    ctx.fillStyle = "#1F6A8A";
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#173540";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // text styles
+    ctx.fillStyle = "#111";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.font = "20px Arial";
+
+    // password label
+    ctx.fillText("Password:", bx + 170, by + h / 2 - 18);
+
+    // username
+    ctx.font = "24px Arial";
+    ctx.fillText(username || "Username", bx + 170, by + h / 2 + 20);
+
+    // optional password display beneath
+    if (password !== undefined && password !== null) {
+        ctx.font = "16px Arial";
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillText(password, bx + 170, by + h / 2 + 48);
+    }
+
+    ctx.restore();
+}
 
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (scene === "hub") {
+        scene = "redirecting";
+        window.location.href = "../TechLab_Hub/home.html";
+    }
     if (scene === "menu") {
         menu();
     }
@@ -1471,4 +1581,4 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 }
 
-gameLoop();
+waitForAuth().then(() => readGame()).then(() => gameLoop());
