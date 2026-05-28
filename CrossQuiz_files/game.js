@@ -17,6 +17,12 @@ let text = function(string, x, y, px) {
 // create a save JSON file
 const SAVE_KEY = "crosswizz_save"
 
+// timer vars
+
+let timeForLevel = 10
+let timerSeconds = timeForLevel
+let timerInterval = null
+
 let mouseX = 0;
 let mouseY = 0;
 let clickX = 0;
@@ -208,7 +214,7 @@ canvas.addEventListener('click', function(event) {
     clickX = event.clientX - rect.left;
     clickY = event.clientY - rect.top;
 
-    if (scene !== "game" || resetting) return;
+    if (scene !== "game" || resetting || gameOver) return;
 
     for (let sq of tiles) {
         if (!sq.exist) continue;
@@ -227,6 +233,9 @@ canvas.addEventListener('click', function(event) {
             isCorrect = (sq.symbol == mathAnswer);
             resetting = true;
 
+            tilesClicked++
+            saveGame();
+            console.log(tilesClicked)
             if (isCorrect) {
                 combo++
                 playComboAnimation()
@@ -480,6 +489,8 @@ let numberToSolveScreen = function(x, y, num) {
 }
 
 function resetGame() {
+    clearInterval(timerInterval);
+    timerSeconds = timeForLevel;
     squares = [];
     tiles = [];
     points = 0;
@@ -488,6 +499,7 @@ function resetGame() {
     isCorrect = false;
     resetting = false;
     combo = 0;
+    comboParticles = []
     playerHealth = 3;
     resultBgColor = "rgb(65, 115, 138)";
     mathQuestions = [];
@@ -497,7 +509,8 @@ function resetGame() {
 
 // make winning screen
 let winningScreen = function() {
-    saveGame()
+    clearInterval(timerInterval)
+    // saveGame()
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -660,11 +673,14 @@ let mathSquare = function(x, y, width, height, symbol, type, hitsLeft) {
     ctx.strokeRect(x, y, width, height);
     ctx.shadowBlur = 0;
 
-    // symbol
+    // symbol — shrink font for longer numbers
+    const digits = String(symbol).length;
+    const fontSize = digits >= 4 ? 16 : digits === 3 ? 20 : 30;
+
     ctx.shadowColor = glowColor;
     ctx.shadowBlur = 3;
     ctx.fillStyle = textColor;
-    ctx.font = "30px 'Courier New'";
+    ctx.font = `${fontSize}px 'Courier New'`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(symbol, x + width / 2, y + height / 2);
@@ -820,7 +836,8 @@ let menu = function() {
     button("Start", canvas.width/ 2, canvas.height / 2 - 75, 150, 50, "levelSelect");
     button("How", canvas.width / 2, canvas.height / 2, 150, 50, "how");
     button("Save", canvas.width / 2, canvas.height / 2 + 75, 150, 50, "saveGame")
-    button("Reset Session", canvas.width / 2, canvas.height / 2 + 150, 150, 50, "resetSession")
+    button("States", canvas.width / 2, canvas.height / 2 + 150, 150, 50, "states");
+    // button("Stat", canvas.width / 2, canvas.height / 2 + 150, 150, 50, "resetSession")
 }
 
 let levelSelector = function(level) {
@@ -1339,6 +1356,7 @@ let createLevel = function() {
     // let allSymbols = squares.filter(sq => sq.exist).map(sq => sq.symbol);
     displayLevelNum(canvas.width/2 - 190, canvas.height/2 - 170)
     healthScreen(canvas.width/2 + 110, canvas.height/2 - 230);
+    timerScreen(canvas.width/2 + 110, canvas.height/2 - 170);
     // let numbers = allSymbols.filter(sym => typeof sym === "number");
 
     // apply blur to everything drawn after this point if game is won
@@ -1373,6 +1391,30 @@ let runGame = function() {
         createLevel();
     }
 }
+
+function timerScreen(x, y) {
+    ctx.fillStyle = "rgba(15, 25, 60, 0.6)";
+    ctx.fillRect(x, y, 120, 34);
+
+    const warning = timerSeconds <= 10;
+
+    ctx.shadowColor = warning ? "rgba(255, 80, 80, 0.7)" : "rgba(255, 200, 80, 0.5)";
+    ctx.shadowBlur = 6;
+    ctx.strokeStyle = warning ? "rgba(255, 80, 80, 0.6)" : "rgba(255, 200, 80, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, 120, 34);
+    ctx.shadowBlur = 0;
+
+    ctx.shadowColor = warning ? "rgba(255, 100, 100, 0.9)" : "rgba(255, 210, 100, 0.7)";
+    ctx.shadowBlur = warning ? 8 : 4;
+    ctx.fillStyle = warning ? "rgb(255, 100, 100)" : "rgb(255, 210, 100)";
+    ctx.font = "12px 'Courier New'";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("TIME  " + timerSeconds + "s", x + 12, y + 17);
+    ctx.shadowBlur = 0;
+}
+
 // because the game runs the functions in the game loop many times, we want to run this code only when the game is initialized, 
 // so that the number to solve doesn't change every frame.
 let questionIdx = 0;
@@ -1394,6 +1436,9 @@ function createNumberToSolve() {
 
 let tiles = []
 let prompts = []
+
+// states for the player
+let tilesClicked = 0
 
 function initGame() {
     tiles = [];
@@ -1438,18 +1483,33 @@ function initGame() {
     prompts = prompts.sort(() => Math.random() - 0.5);
     questionIdx = 0;
     createNumberToSolve();
+
+    clearInterval(timerInterval);
+    timerSeconds = timeForLevel;
+    timerInterval = setInterval(() => {
+        if (!gameOver) {
+            timerSeconds--;
+            if (timerSeconds <= 0) {
+                timerSeconds = 0;
+                clearInterval(timerInterval);
+                gameOver = true;
+            }
+        }
+    }, 1000);
 }
 
 async function saveGame() {
+    console.log(tilesClicked)
     const user = auth.currentUser;
     if (!user) {
         // fallback to localStorage if not logged in
-        localStorage.setItem(SAVE_KEY, JSON.stringify({ unlockedUpTo }));
+        localStorage.setItem(SAVE_KEY, JSON.stringify({ unlockedUpTo, tilesClicked}));
         return;
     }
     try {
         await db.collection("users").doc(user.uid).update({
-            unlockedUpTo: unlockedUpTo
+            unlockedUpTo: unlockedUpTo,
+            tilesClicked: tilesClicked
         });
         console.log("Game saved to Firebase.");
     } catch (e) {
@@ -1467,6 +1527,7 @@ async function readGame() {
         try {
             const data = JSON.parse(raw);
             if (data.unlockedUpTo) unlockedUpTo = data.unlockedUpTo;
+            if (data.tilesClicked) tilesClicked = data.tilesClicked
         } catch (e) {
             localStorage.removeItem(SAVE_KEY);
         }
@@ -1477,6 +1538,7 @@ async function readGame() {
         if (doc.exists) {
             const data = doc.data();
             if (data.unlockedUpTo) unlockedUpTo = data.unlockedUpTo;
+            if (data.tilesClicked) tilesClicked = data.tilesClicked
         }
     } catch (e) {
         console.warn("Firebase read failed.", e);
@@ -1555,6 +1617,86 @@ function userProfileCard(username, password, x, y, w, h) {
     ctx.restore();
 }
 
+function runStates() {
+    // background
+    ctx.fillStyle = "rgba(5, 8, 20, 1)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // stars
+    for (let i = 0; i < 130; i++) {
+        const sx = (i * 137.508) % canvas.width;
+        const sy = (i * 97.333) % canvas.height;
+        const size = i % 5 === 0 ? 1.5 : 0.7;
+        const brightness = 0.3 + (i % 7) * 0.1;
+        ctx.fillStyle = `rgba(200, 220, 255, ${brightness})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // back button
+    const bx = 30, by = 20, bw = 80, bh = 30;
+    const bHover = mouseX > bx && mouseX < bx + bw && mouseY > by && mouseY < by + bh;
+    ctx.fillStyle = bHover ? "rgba(80, 120, 255, 0.3)" : "rgba(30, 50, 120, 0.4)";
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = bHover ? "rgba(120, 160, 255, 0.9)" : "rgba(80, 100, 200, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.shadowColor = "rgba(100, 150, 255, 0.8)";
+    ctx.shadowBlur = bHover ? 10 : 4;
+    ctx.fillStyle = bHover ? "rgb(180, 210, 255)" : "rgb(120, 160, 255)";
+    ctx.font = "13px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("← BACK", bx + bw / 2, by + bh / 2);
+    ctx.shadowBlur = 0;
+    if (clickX > bx && clickX < bx + bw && clickY > by && clickY < by + bh) {
+        scene = "menu";
+        clickX = -1; clickY = -1;
+        return;
+    }
+
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+
+    // panel
+    ctx.fillStyle = "rgba(15, 25, 60, 0.9)";
+    ctx.fillRect(cx - 200, cy - 120, 400, 240);
+    ctx.shadowColor = "rgba(80, 140, 255, 0.5)";
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = "rgba(80, 140, 255, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx - 200, cy - 120, 400, 240);
+    ctx.shadowBlur = 0;
+
+    // title
+    ctx.fillStyle = "rgb(180, 215, 255)";
+    ctx.font = "bold 26px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("STATS", cx, cy - 80);
+
+    // divider
+    ctx.strokeStyle = "rgba(80, 140, 255, 0.2)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - 150, cy - 55);
+    ctx.lineTo(cx + 150, cy - 55);
+    ctx.stroke();
+
+    // tiles clicked stat
+    ctx.fillStyle = "rgba(100, 150, 255, 0.6)";
+    ctx.font = "11px 'Courier New'";
+    ctx.fillText("TILES CLICKED", cx, cy - 20);
+
+    ctx.shadowColor = "rgba(80, 255, 160, 0.8)";
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = "rgb(80, 255, 160)";
+    ctx.font = "bold 48px 'Courier New'";
+    ctx.fillText(tilesClicked, cx, cy + 30);
+    ctx.shadowBlur = 0;
+}
+
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (scene === "hub") {
@@ -1573,6 +1715,9 @@ function gameLoop() {
     if (scene === "saveGame") {
         saveGame()
         menu()
+    }
+    if (scene === "states") {
+        runStates();
     }
     if (scene === "resetSession") {
         resetSession()
