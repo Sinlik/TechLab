@@ -6,6 +6,13 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const TOP_UI_HEIGHT = 100; // your top bar zone (points + result + level)
 const GRID_MARGIN = 20;    // extra padding above the grid
 
+let levelStartSeconds = 0;
+
+// list of admins
+
+let adminList = ["noamwolf", "pinchas", "theboss"]
+let isAdmin = false;
+
 let text = function(string, x, y, px) {
     let text = string;
     ctx.fillStyle = "black";
@@ -19,8 +26,6 @@ const SAVE_KEY = "crosswizz_save"
 
 // timer vars
 
-let timeForLevel = 10
-let timerSeconds = timeForLevel
 let timerInterval = null
 
 let mouseX = 0;
@@ -50,6 +55,102 @@ let shakeTimer = 0;
 let rows = 1;
 let columns = 2;
 
+let currentLevelQuestions = [];
+
+const melody = [
+    // Phrase A — opening motif (from ~11s): G -> C# -> D -> C# -> C
+    [392.00, 0.18],  // G4
+    [0,      0.08],
+    [277.18, 0.12],  // C#4
+    [293.66, 0.18],  // D4
+    [277.18, 0.20],  // C#4
+    [261.63, 0.28],  // C4
+    [0,      0.14],
+
+    // Phrase B — descending minor (from ~20s): G# -> G -> F -> E -> D#
+    [415.30, 0.28],  // G#4
+    [392.00, 0.14],  // G4
+    [392.00, 0.14],  // G4
+    [349.23, 0.18],  // F4
+    [329.63, 0.16],  // E4
+    [311.13, 0.32],  // D#4
+    [0,      0.10],
+
+    // Phrase C — ornamental D#/D oscillation (from ~25s)
+    [311.13, 0.12],  // D#4
+    [293.66, 0.10],  // D4
+    [311.13, 0.12],  // D#4
+    [293.66, 0.10],  // D4
+    [311.13, 0.10],  // D#4
+    [293.66, 0.10],  // D4
+    [311.13, 0.12],  // D#4
+    [293.66, 0.28],  // D4
+    [261.63, 0.32],  // C4
+    [0,      0.12],
+
+    // Phrase D — climbing resolve (from ~34s): F -> G -> E -> D -> C
+    [349.23, 0.16],  // F4
+    [392.00, 0.20],  // G4
+    [329.63, 0.20],  // E4
+    [293.66, 0.18],  // D4
+    [261.63, 0.30],  // C4
+    [277.18, 0.18],  // C#4
+    [293.66, 0.14],  // D4
+    [261.63, 0.36],  // C4
+    [0,      0.14],
+
+    // Phrase E — upper arch (from ~47s): A -> G -> F# -> G -> F -> E -> D#
+    [440.00, 0.12],  // A4
+    [392.00, 0.10],  // G4
+    [369.99, 0.18],  // F#4
+    [392.00, 0.14],  // G4
+    [493.88, 0.14],  // B4
+    [392.00, 0.10],  // G4
+    [349.23, 0.28],  // F4
+    [329.63, 0.14],  // E4
+    [311.13, 0.32],  // D#4
+    [0,      0.10],
+
+    // Phrase F — final resolution (from ~57s): G -> E -> F -> E -> D# -> C
+    [392.00, 0.20],  // G4
+    [329.63, 0.14],  // E4
+    [349.23, 0.10],  // F4
+    [329.63, 0.22],  // E4
+    [349.23, 0.10],  // F4
+    [329.63, 0.14],  // E4
+    [311.13, 0.12],  // D#4
+    [293.66, 0.12],  // D4
+    [261.63, 0.40],  // C4
+    [0,      0.18],
+];
+
+// Bass — low C/G pedal tones matching the niggun feel
+const bass = [
+    [130.81, 0.28], [0, 0.08],  // C3
+    [130.81, 0.28], [0, 0.08],  // C3
+    [146.83, 0.28], [0, 0.08],  // D3
+    [130.81, 0.28], [0, 0.08],  // C3
+    [98.00,  0.28], [0, 0.08],  // G2
+    [98.00,  0.28], [0, 0.08],  // G2
+    [110.00, 0.28], [0, 0.08],  // A2
+    [130.81, 0.28], [0, 0.08],  // C3
+];
+
+// Chords — minor feel: Cm, Dm, Gm
+const chords = [
+    [[261.63, 311.13, 392.00], 0.08],  // Cm (C D# G)
+    [[261.63, 311.13, 392.00], 0.08],
+    [[293.66, 349.23, 440.00], 0.08],  // Dm (D F A)
+    [[261.63, 311.13, 392.00], 0.08],
+    [[196.00, 233.08, 293.66], 0.08],  // Gm (G A# D)
+    [[196.00, 233.08, 293.66], 0.08],
+    [[220.00, 261.63, 329.63], 0.08],  // Am (A C E)
+    [[261.63, 311.13, 392.00], 0.08],  // Cm
+];
+
+let musicNodes = [];
+let musicPlaying = null;
+
 let currentUserFirebase = "";
 let currentEmailFirebase = "";
 
@@ -66,6 +167,149 @@ auth.onAuthStateChanged(async (user) => {
         currentEmailFirebase = "";
     }
 });
+
+function playMusic() {
+    if (musicPlaying) return;
+    musicPlaying = true;
+
+    function playLayer(sequence, gainLevel, loop) {
+        let when = audioCtx.currentTime + 0.05;
+
+        function scheduleSequence() {
+            sequence.forEach(([freq, dur]) => {
+                if (freq === 0) { when += dur; return; }
+
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                // filter for warmth — cuts harsh high frequencies
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = "lowpass";
+                filter.frequency.value = 1200;
+                filter.Q.value = 0.8;
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.type = "sine";  // ← smooth instead of square
+                osc.frequency.value = freq;
+
+                // legato envelope — slow attack, long release, notes overlap slightly
+                const attack  = 0.06;
+                const release = Math.min(dur * 0.6, 0.25);
+                gain.gain.setValueAtTime(0, when);
+                gain.gain.linearRampToValueAtTime(gainLevel, when + attack);
+                gain.gain.setValueAtTime(gainLevel, when + dur - release);
+                gain.gain.linearRampToValueAtTime(0, when + dur + 0.05); // slight overlap
+
+                osc.start(when);
+                osc.stop(when + dur + 0.1);
+                musicNodes.push(osc);
+                when += dur;
+            });
+
+            if (loop && musicPlaying) {
+                const loopDuration = when - audioCtx.currentTime;
+                setTimeout(scheduleSequence, (loopDuration - 0.3) * 1000);
+            }
+        }
+        scheduleSequence();
+    }
+
+    function playBassLayer(sequence, gainLevel, loop) {
+        let when = audioCtx.currentTime + 0.05;
+
+        function scheduleSequence() {
+            sequence.forEach(([freq, dur]) => {
+                if (freq === 0) { when += dur; return; }
+
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                // warmer bass — triangle wave, lowpass filtered
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = "lowpass";
+                filter.frequency.value = 400;
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.type = "triangle";
+                osc.frequency.value = freq;
+
+                gain.gain.setValueAtTime(0, when);
+                gain.gain.linearRampToValueAtTime(gainLevel, when + 0.08);
+                gain.gain.linearRampToValueAtTime(gainLevel * 0.7, when + dur * 0.5);
+                gain.gain.linearRampToValueAtTime(0, when + dur + 0.08);
+
+                osc.start(when);
+                osc.stop(when + dur + 0.12);
+                musicNodes.push(osc);
+                when += dur;
+            });
+
+            if (loop && musicPlaying) {
+                const loopDuration = when - audioCtx.currentTime;
+                setTimeout(scheduleSequence, (loopDuration - 0.3) * 1000);
+            }
+        }
+        scheduleSequence();
+    }
+
+    function playPadLayer(sequence, gainLevel, loop) {
+        let when = audioCtx.currentTime + 0.05;
+
+        function scheduleSequence() {
+            sequence.forEach(([freqs, dur]) => {
+                freqs.forEach(freq => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+
+                    const filter = audioCtx.createBiquadFilter();
+                    filter.type = "lowpass";
+                    filter.frequency.value = 800;
+                    filter.Q.value = 0.5;
+
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(audioCtx.destination);
+
+                    osc.type = "sine";
+
+                    // detune slightly per voice for lush pad effect
+                    osc.frequency.value = freq;
+                    osc.detune.value = (Math.random() - 0.5) * 6;
+
+                    // very slow attack/release — pad swells in and out
+                    const padDur = dur + 0.28;
+                    gain.gain.setValueAtTime(0, when);
+                    gain.gain.linearRampToValueAtTime(gainLevel, when + 0.18);
+                    gain.gain.linearRampToValueAtTime(gainLevel * 0.8, when + padDur - 0.15);
+                    gain.gain.linearRampToValueAtTime(0, when + padDur + 0.1);
+
+                    osc.start(when);
+                    osc.stop(when + padDur + 0.15);
+                    musicNodes.push(osc);
+                });
+                when += dur + 0.28;
+            });
+
+            if (loop && musicPlaying) {
+                const loopDuration = when - audioCtx.currentTime;
+                setTimeout(scheduleSequence, (loopDuration - 0.3) * 1000);
+            }
+        }
+        scheduleSequence();
+    }
+
+    playLayer(melody,       0.10, true);   // lead — sine, legato
+    playBassLayer(bass,     0.14, true);   // bass — triangle, warm
+    playPadLayer(chords,    0.03, true);   // chords — soft sine pad
+}
+
+playMusic()
 
 
 function playCorrectSound() {
@@ -209,13 +453,23 @@ function updateComboParticles() {
     }
 }
 
+let saveTimeout = null;
+let levelWon = false;
+
 canvas.addEventListener('click', function(event) {
     let rect = canvas.getBoundingClientRect();
     clickX = event.clientX - rect.left;
     clickY = event.clientY - rect.top;
 
-    if (scene !== "game" || resetting || gameOver) return;
+    if (scene !== "game" || resetting || gameOver || levelWon) {
+        return;
+    }
 
+    // Allow clicks on winning screen buttons even when levelWon = true
+    if (levelWon) {
+        return;   // let winningScreen() handle the click
+    }
+    
     for (let sq of tiles) {
         if (!sq.exist) continue;
         if (clickX > sq.x && clickX < sq.x + 50 && clickY > sq.y && clickY < sq.y + 50) {
@@ -233,8 +487,12 @@ canvas.addEventListener('click', function(event) {
             isCorrect = (sq.symbol == mathAnswer);
             resetting = true;
 
-            tilesClicked++
-            saveGame();
+            tilesClicked += 1;
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                saveGame();
+            }, 1000); // Save once per second max
+
             console.log(tilesClicked)
             if (isCorrect) {
                 combo++
@@ -282,28 +540,45 @@ function randomSymbol() {
     return all[Math.floor(Math.random() * all.length)];
 }
 
-const LEVEL_CONFIG = {
-  1:  { rows: 1, columns: 2, ops: ['+', '-'], nums: [1,2,3,4,5] },
-  2:  { rows: 2, columns: 2, ops: ['+', '-'], nums: [1,2,3,4,5] },
-  3:  { rows: 2, columns: 2, ops: ['+', '-'], nums: [1,2,3,4,5,6,7,8] },
-  4:  { rows: 2, columns: 2, ops: ['+', '-'], nums: [1,2,3,4,5,6,7,8,9,10] },
-  5:  { rows: 2, columns: 3, ops: ['+', '-'], nums: [1,2,3,4,5,6,7,8,9,10] },
-  6:  { rows: 2, columns: 3, ops: ['+', '-'], nums: [2,3,4,5,6,7,8,9,10,11,12] },
-  7:  { rows: 3, columns: 3, ops: ['+', '-'], nums: [2,3,4,5,6,7,8,9,10,11,12] },
-  8:  { rows: 3, columns: 3, ops: ['+', '-', '*'], nums: [1,2,3,4,5,6,7,8,9,10] },
-  9:  { rows: 3, columns: 3, ops: ['+', '-', '*'], nums: [1,2,3,4,5,6,7,8,9,10,11,12] },
-  10: { rows: 3, columns: 3, ops: ['+', '-', '*'], nums: [2,3,4,5,6,7,8,9,10,11,12] },
-  11: { rows: 3, columns: 4, ops: ['+', '-', '*'], nums: [2,3,4,5,6,7,8,9,10,11,12] },
-  12: { rows: 3, columns: 4, ops: ['+', '-', '*'], nums: [3,4,5,6,7,8,9,10,11,12,15] },
-  13: { rows: 4, columns: 4, ops: ['+', '-', '*'], nums: [3,4,5,6,7,8,9,10,11,12,15] },
-  14: { rows: 4, columns: 4, ops: ['+', '-', '*'], nums: [4,5,6,7,8,9,10,11,12,15,20] },
-  15: { rows: 4, columns: 5, ops: ['+', '-', '*'], nums: [5,10,15,20,25,30] },
-  16: { rows: 4, columns: 5, ops: ['+', '-', '*'], nums: [5,10,15,20,25,30,50] },
-  17: { rows: 5, columns: 5, ops: ['+', '-', '*'], nums: [5,10,15,20,25,30,50] },
-  18: { rows: 5, columns: 5, ops: ['+', '-', '*'], nums: [10,15,20,25,30,50,100] },
-  19: { rows: 5, columns: 5, ops: ['+', '-', '*'], nums: [10,20,25,30,50,75,100] },
-  20: { rows: 5, columns: 5, ops: ['+', '-', '*'], nums: [12,15,20,25,50,75,100] },
-};
+// const LEVEL_CONFIG = {
+//   1:  { rows: 1, columns: 2, ops: ['+', '-'], nums: [1,2,3,4,5] },
+//   2:  { rows: 2, columns: 2, ops: ['+', '-'], nums: [1,2,3,4,5] },
+//   3:  { rows: 2, columns: 2, ops: ['+', '-'], nums: [1,2,3,4,5,6,7,8] },
+//   4:  { rows: 2, columns: 2, ops: ['+', '-'], nums: [1,2,3,4,5,6,7,8,9,10] },
+//   5:  { rows: 2, columns: 3, ops: ['+', '-'], nums: [1,2,3,4,5,6,7,8,9,10] },
+//   6:  { rows: 2, columns: 3, ops: ['+', '-'], nums: [2,3,4,5,6,7,8,9,10,11,12] },
+//   7:  { rows: 3, columns: 3, ops: ['+', '-'], nums: [2,3,4,5,6,7,8,9,10,11,12] },
+//   8:  { rows: 3, columns: 3, ops: ['+', '-', '*'], nums: [1,2,3,4,5,6,7,8,9,10] },
+//   9:  { rows: 3, columns: 3, ops: ['+', '-', '*'], nums: [1,2,3,4,5,6,7,8,9,10,11,12] },
+//   10: { rows: 3, columns: 3, ops: ['+', '-', '*'], nums: [2,3,4,5,6,7,8,9,10,11,12] },
+//   11: { rows: 3, columns: 4, ops: ['+', '-', '*'], nums: [2,3,4,5,6,7,8,9,10,11,12] },
+//   12: { rows: 3, columns: 4, ops: ['+', '-', '*'], nums: [3,4,5,6,7,8,9,10,11,12,15] },
+//   13: { rows: 4, columns: 4, ops: ['+', '-', '*'], nums: [3,4,5,6,7,8,9,10,11,12,15] },
+//   14: { rows: 4, columns: 4, ops: ['+', '-', '*'], nums: [4,5,6,7,8,9,10,11,12,15,20] },
+//   15: { rows: 4, columns: 5, ops: ['+', '-', '*'], nums: [5,10,15,20,25,30] },
+//   16: { rows: 4, columns: 5, ops: ['+', '-', '*'], nums: [5,10,15,20,25,30,50] },
+//   17: { rows: 5, columns: 5, ops: ['+', '-', '*'], nums: [5,10,15,20,25,30,50] },
+//   18: { rows: 5, columns: 5, ops: ['+', '-', '*'], nums: [10,15,20,25,30,50,100] },
+//   19: { rows: 5, columns: 5, ops: ['+', '-', '*'], nums: [10,20,25,30,50,75,100] },
+//   20: { rows: 5, columns: 5, ops: ['+', '-', '*'], nums: [12,15,20,25,50,75,100] },
+// };
+
+function getTimeForLevel(level) {
+    const base = 30;
+    const step = 8;
+    const maxTime = 150;
+    return Math.min(base + (level - 1) * step, maxTime);
+}
+
+let timeForLevel = getTimeForLevel(selectedLevel);
+let timerSeconds = timeForLevel;
+levelStartSeconds = timeForLevel;
+
+function formatTime(totalSeconds) {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 function runHow() {
     // background
@@ -415,6 +690,7 @@ function createMathQuestions(level = 1) {
 
     const totalCells = rows * columns;
     mathQuestions = [];
+    currentLevelQuestions = []; // Reset for new level
 
     function generateQuestion() {
         let num1, num2, operator, answer;
@@ -426,23 +702,56 @@ function createMathQuestions(level = 1) {
                        : operator === '+' ? num1 + num2
                        :                    num1 - num2;
         } while (answer <= 0 || !Number.isInteger(answer));
-        return { question: `${num1} ${operator} ${num2} = ?`, answer };
+
+        const qText = `${num1} ${operator} ${num2} = ?`;
+        
+        // Store for Firebase
+        currentLevelQuestions.push({
+            question: qText,
+            answer: answer,
+            operator: operator
+        });
+
+        return { question: qText, answer };
     }
 
     for (let i = 0; i < totalCells; i++) {
         const type = getTileType(level);
         const hitsRequired = type === "blue" ? 1 : type === "orange" ? 2 : 3;
 
-        // Generate one unique question per required hit
         const questions = Array.from({ length: hitsRequired }, generateQuestion);
 
         mathQuestions.push({
-            questions,        // array of { question, answer } — one per hit
+            questions,
             answer: questions[0].answer,
             question: questions[0].question,
             type,
             hitsRequired
         });
+    }
+
+    // Save questions to Firebase after generating
+    saveLevelQuestions();
+}
+
+async function saveLevelQuestions() {
+    if (!currentLevelQuestions || currentLevelQuestions.length === 0) return;
+
+    try {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const levelKey = `level_${selectedLevel}_questions`;
+
+        await db.collection("users").doc(user.uid).set({
+            [levelKey]: currentLevelQuestions,
+            lastPlayedLevel: selectedLevel,
+            lastPlayedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        console.log(`✅ Saved ${currentLevelQuestions.length} questions for level ${selectedLevel}`);
+    } catch (e) {
+        console.warn("Failed to save level questions:", e);
     }
 }
 
@@ -490,27 +799,27 @@ let numberToSolveScreen = function(x, y, num) {
 
 function resetGame() {
     clearInterval(timerInterval);
-    timerSeconds = timeForLevel;
+
     squares = [];
     tiles = [];
     points = 0;
     mathQuestion = "";
     mathAnswer = 0;
+    symbolsClicked = 0;
     isCorrect = false;
     resetting = false;
     combo = 0;
-    comboParticles = []
+    comboParticles = [];
     playerHealth = 3;
-    resultBgColor = "rgb(65, 115, 138)";
-    mathQuestions = [];
-    howToShown = false;
-    howToTimer = 0;
+    gameOver = false;
+    levelWon = false;
+    lastSavedTilesClicked = tilesClicked;
 }
 
 // make winning screen
 let winningScreen = function() {
     clearInterval(timerInterval)
-    // saveGame()
+    saveGame()
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -527,6 +836,11 @@ let winningScreen = function() {
     ctx.strokeRect(cx - 200, cy - 80, 400, 180);
     ctx.shadowBlur = 0;
 
+    const timePlayed = Math.max(0, levelStartSeconds - timerSeconds);
+    ctx.fillStyle = "rgb(140, 180, 255)";
+    ctx.font = "13px Courier New";
+    ctx.fillText(`TIME: ${formatTime(timePlayed)}`, cx, cy);
+
     // win title
     ctx.shadowColor = "rgba(80, 255, 160, 0.9)";
     ctx.shadowBlur = 16;
@@ -540,7 +854,7 @@ let winningScreen = function() {
     // points
     ctx.fillStyle = "rgba(100, 150, 255, 0.8)";
     ctx.font = "13px 'Courier New'";
-    ctx.fillText("FINAL SCORE  " + points + "  PTS", cx, cy + 10);
+    ctx.fillText("FINAL SCORE  " + points + "  PTS", cx, cy + 20);
 
     // divider
     ctx.strokeStyle = "rgba(60, 255, 150, 0.2)";
@@ -573,10 +887,17 @@ let winningScreen = function() {
 
     if (clickX > bx && clickX < bx + bw && clickY > by && clickY < by + bh) {
         const nextLevel = selectedLevel < levelCount ? selectedLevel + 1 : 1;
-        if (nextLevel > unlockedUpTo) unlockedUpTo = nextLevel;
+        if (nextLevel > unlockedUpTo) {
+            unlockedUpTo = nextLevel;
+            saveGame();  // ← persist the new unlock
+        }
+
+        levelWon = false;
         resetGame();
-        selectedLevel = nextLevel
-        clickX = -1; clickY = -1;
+        
+        startLevel(nextLevel);
+        clickX = -1;
+        clickY = -1;
     }
 }
 // global text for result screen
@@ -751,9 +1072,8 @@ let button = function(string, x, y, width, height, target) {
     }
 }
 
-
 let menu = function() {
-    readGame()
+    // readGame()
     // deep space background
     ctx.fillStyle = "rgba(5, 8, 20, 1)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -837,6 +1157,8 @@ let menu = function() {
     button("How", canvas.width / 2, canvas.height / 2, 150, 50, "how");
     button("Save", canvas.width / 2, canvas.height / 2 + 75, 150, 50, "saveGame")
     button("States", canvas.width / 2, canvas.height / 2 + 150, 150, 50, "states");
+    if (isAdmin)
+        button("Admin", canvas.width / 2 + 275, canvas.height / 2 - 225, 150, 50, "admin");
     // button("Stat", canvas.width / 2, canvas.height / 2 + 150, 150, 50, "resetSession")
 }
 
@@ -980,6 +1302,10 @@ let levelSelector = function(level) {
                 clickX = -1; clickY = -1;
                 return;
             }
+            if (!locked) {
+                startLevel(levelNum);
+            }
+
             resetGame();
             selectedLevel = levelNum;
             console.log("Level " + levelNum + " selected!");
@@ -1278,7 +1604,6 @@ function howTo() {
     }
 }
 
-
 let createLevel = function() {
     if (gameOver) {
         gameOverScreen();
@@ -1370,12 +1695,20 @@ let createLevel = function() {
     // if points = number of symbols, then display winning screen
     // console.log("numbers left: " + numbers.length);
     // Win condition: no more tiles
-    updateComboParticles();
-
     if (!tiles.some(t => t.exist)) {
+        levelWon = true;
         winningScreen();
+        return
     }
 
+    if (!levelWon) {
+        for (let sq of tiles) {
+            if (sq.exist) {
+                mathSquare(sq.x, sq.y, 50, 50, sq.symbol, sq.type, sq.hitsLeft);
+            }
+        }
+    }
+    updateComboParticles();
     if (!tiles.some(t => t.exist)) {
         console.log("No more tiles left, you win!");
         winningScreen();
@@ -1437,11 +1770,24 @@ function createNumberToSolve() {
 let tiles = []
 let prompts = []
 
+function startLevel(levelNum) {
+    selectedLevel = levelNum;
+    currentLevelQuestions = [];
+    resetGame();
+    initGame();
+    scene = "game";
+    levelWon = false;
+    howToShown = false;
+    howToTimer = 0;
+}
 // states for the player
 let tilesClicked = 0
+let lastSavedTilesClicked = 0
 
 function initGame() {
     tiles = [];
+    mathQuestions = [];
+
     createMathQuestions(selectedLevel);
 
     const TILE_SIZE = 50;
@@ -1451,14 +1797,9 @@ function initGame() {
     const GRID_WIDTH  = (columns - 1) * SPACING_X + TILE_SIZE;
     const GRID_HEIGHT = (rows - 1) * SPACING_Y + TILE_SIZE;
 
-    // Remaining space after top UI
-    const availableTop    = TOP_UI_HEIGHT + GRID_MARGIN;
+    const availableTop = TOP_UI_HEIGHT + GRID_MARGIN;
     const availableHeight = canvas.height - availableTop;
-
-    // Vertically center the grid in the bottom area
     const gridStartY = availableTop + (availableHeight - GRID_HEIGHT) / 2;
-
-    // Horizontally center the grid on the canvas
     const startX = (canvas.width - GRID_WIDTH) / 2;
     const startY = gridStartY;
 
@@ -1468,24 +1809,25 @@ function initGame() {
             tiles.push({
                 x: startX + j * SPACING_X,
                 y: startY + i * SPACING_Y,
-                symbol: q.questions[0].answer,   // shows current hit's answer
+                symbol: q.questions[0].answer,
                 exist: true,
                 type: q.type,
                 hitsRequired: q.hitsRequired,
                 hitsLeft: q.hitsRequired,
-                questions: q.questions           // full list of questions for this tile
+                questions: q.questions
             });
-
-            createNumberToSolve()
         }
     }
 
-    prompts = prompts.sort(() => Math.random() - 0.5);
     questionIdx = 0;
     createNumberToSolve();
 
     clearInterval(timerInterval);
+    timeForLevel = getTimeForLevel(selectedLevel);
     timerSeconds = timeForLevel;
+    levelStartSeconds = timeForLevel;
+
+
     timerInterval = setInterval(() => {
         if (!gameOver) {
             timerSeconds--;
@@ -1496,41 +1838,51 @@ function initGame() {
             }
         }
     }, 1000);
+
 }
 
+function checkAdmin(username) {
+    return adminList.includes((username || "").toLowerCase());
+}
+
+let saving = false;
+
 async function saveGame() {
-    console.log(tilesClicked)
-    const user = auth.currentUser;
-    if (!user) {
-        // fallback to localStorage if not logged in
-        localStorage.setItem(SAVE_KEY, JSON.stringify({ unlockedUpTo, tilesClicked}));
-        return;
-    }
+    if (saving) return;
+    saving = true;
+
     try {
-        await db.collection("users").doc(user.uid).update({
-            unlockedUpTo: unlockedUpTo,
-            tilesClicked: tilesClicked
-        });
-        console.log("Game saved to Firebase.");
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const username = (user.displayName || user.email?.split("@")[0] || "").toLowerCase();
+        isAdmin = checkAdmin(username);
+
+        const delta = tilesClicked - lastSavedTilesClicked;
+
+        if (delta > 0) {
+            await db.collection("users").doc(user.uid).set({
+                unlockedUpTo,
+                tilesClicked: firebase.firestore.FieldValue.increment(delta),
+                username,
+                email: user.email,
+                isAdmin
+            }, { merge: true });
+
+            lastSavedTilesClicked = tilesClicked;
+            console.log(`✅ Saved +${delta} tilesClicked (total: ${tilesClicked})`);
+        }
     } catch (e) {
-        console.warn("Firebase save failed, falling back to localStorage.", e);
-        localStorage.setItem(SAVE_KEY, JSON.stringify({ unlockedUpTo }));
+        console.warn(e);
+    } finally {
+        saving = false;
     }
 }
 
 async function readGame() {
     const user = auth.currentUser;
     if (!user) {
-        // fallback to localStorage
-        const raw = localStorage.getItem(SAVE_KEY);
-        if (!raw) return;
-        try {
-            const data = JSON.parse(raw);
-            if (data.unlockedUpTo) unlockedUpTo = data.unlockedUpTo;
-            if (data.tilesClicked) tilesClicked = data.tilesClicked
-        } catch (e) {
-            localStorage.removeItem(SAVE_KEY);
-        }
+        // localStorage fallback...
         return;
     }
     try {
@@ -1538,7 +1890,12 @@ async function readGame() {
         if (doc.exists) {
             const data = doc.data();
             if (data.unlockedUpTo) unlockedUpTo = data.unlockedUpTo;
-            if (data.tilesClicked) tilesClicked = data.tilesClicked
+            if (data.tilesClicked !== undefined) {
+                tilesClicked = data.tilesClicked;
+                lastSavedTilesClicked = data.tilesClicked;   // ← IMPORTANT
+            }
+            const username = data.username || user.email?.split("@")[0] || "";
+            isAdmin = checkAdmin(username);
         }
     } catch (e) {
         console.warn("Firebase read failed.", e);
@@ -1550,6 +1907,7 @@ console.log(unlockedUpTo)
 function resetSession() {
     unlockedUpTo = 1;
     selectedLevel = 0;
+    lastSavedTilesClicked = 0;
     localStorage.removeItem(SAVE_KEY);
 }
 
@@ -1697,6 +2055,248 @@ function runStates() {
     ctx.shadowBlur = 0;
 }
 
+let adminUsers = null;
+
+async function loadAdminData() {
+    const snapshot = await db.collection("users").get();
+    adminUsers = snapshot.docs.map(d => d.data());
+}
+
+let selectedAdminUser = null;
+
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
+function runAdmin() {
+    // background
+    ctx.fillStyle = "rgba(5, 8, 20, 1)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // stars
+    for (let i = 0; i < 160; i++) {
+        const sx = (i * 137.508) % canvas.width;
+        const sy = (i * 97.333) % canvas.height;
+        const size = i % 7 === 0 ? 1.8 : i % 3 === 0 ? 1.1 : 0.5;
+        const brightness = 0.2 + (i % 9) * 0.08;
+
+        ctx.fillStyle = `rgba(200, 220, 255, ${brightness})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // title
+    ctx.shadowColor = "rgba(120, 180, 255, 0.8)";
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = "rgba(180, 215, 255, 1)";
+    ctx.font = "bold 42px Courier New";
+    ctx.textAlign = "center";
+    ctx.fillText("ADMIN CORE", canvas.width / 2, 80);
+    ctx.shadowBlur = 0;
+
+    if (selectedAdminUser) {
+        adminUserInfo();
+        return;
+    }
+
+    // loading state
+    if (!adminUsers) {
+        ctx.fillStyle = "rgba(180, 220, 255, 0.8)";
+        ctx.font = "20px Courier New";
+        ctx.textAlign = "center";
+        ctx.fillText("Loading users...", canvas.width / 2, canvas.height / 2);
+        return;
+    }
+
+    // panel
+    ctx.fillStyle = "rgba(20, 30, 60, 0.5)";
+    roundRect(ctx, canvas.width / 2 - 300, 120, 600, 400, 12);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(180, 220, 255, 0.8)";
+    ctx.font = "16px Courier New";
+    ctx.textAlign = "left";
+
+    let y = 160;
+
+    adminUsers.forEach((u, i) => {
+        const name = u.username || "Unknown";
+        const level = u.unlockedUpTo || 0;
+        const tiles = u.tilesClicked || 0;
+
+        const lineY = y;
+        const isHover = mouseX > canvas.width/2 - 280 && mouseX < canvas.width/2 + 280 && 
+                        mouseY > lineY - 12 && mouseY < lineY + 12;
+
+        // Highlight on hover
+        ctx.fillStyle = isHover ? "rgba(140, 220, 255, 1)" : "rgba(180, 220, 255, 0.85)";
+        ctx.fillText(
+            `${i + 1}. ${name} | Level: ${level} | Tiles: ${tiles}`,
+            canvas.width / 2 - 280,
+            lineY
+        );
+
+        // Click detection
+        if (clickX > canvas.width/2 - 280 && clickX < canvas.width/2 + 280 && 
+            clickY > lineY - 15 && clickY < lineY + 15) {
+            
+            selectedAdminUser = u;
+            clickX = -1;
+            clickY = -1;
+        }
+
+        y += 28;
+    });
+
+    button("Back", canvas.width / 2, canvas.height - 80, 160, 50, "menu");
+}
+
+function adminUserInfo() {
+    // Background overlay
+    ctx.fillStyle = "rgba(5, 8, 20, 0.95)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+
+    // Main card
+    ctx.fillStyle = "rgba(15, 25, 60, 0.95)";
+    ctx.shadowColor = "rgba(80, 140, 255, 0.6)";
+    ctx.shadowBlur = 25;
+    roundRect(ctx, cx - 280, cy - 220, 560, 440, 20);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Border glow
+    ctx.strokeStyle = "rgba(100, 180, 255, 0.7)";
+    ctx.lineWidth = 3;
+    roundRect(ctx, cx - 280, cy - 220, 560, 440, 20);
+    ctx.stroke();
+
+    const user = selectedAdminUser || {};
+    const username = user.username || "Unknown";
+
+    // Title
+    ctx.shadowColor = "rgba(120, 200, 255, 0.9)";
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = "rgb(180, 225, 255)";
+    ctx.font = "bold 28px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.fillText(username.toUpperCase() + " — PROFILE", cx, cy - 175);
+    ctx.shadowBlur = 0;
+
+    // Stats Section
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(160, 210, 255, 0.9)";
+    ctx.font = "16px 'Courier New'";
+
+    let statsY = cy - 130;
+
+    ctx.fillText(`HIGHEST LEVEL:`, cx - 240, statsY);
+    ctx.fillStyle = "rgb(80, 255, 180)";
+    ctx.fillText((user.unlockedUpTo || 1).toString(), cx + 50, statsY);
+
+    statsY += 35;
+    ctx.fillStyle = "rgba(160, 210, 255, 0.9)";
+    ctx.fillText(`TOTAL TILES CLICKED:`, cx - 240, statsY);
+    ctx.fillStyle = "rgb(80, 255, 180)";
+    ctx.fillText((user.tilesClicked || 0).toLocaleString(), cx + 50, statsY);
+
+    // Questions Section
+    ctx.fillStyle = "rgba(160, 210, 255, 0.9)";
+    ctx.font = "bold 17px 'Courier New'";
+    ctx.fillText("QUESTIONS GENERATED", cx - 240, cy - 40);
+
+    ctx.strokeStyle = "rgba(80, 140, 255, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - 240, cy - 28);
+    ctx.lineTo(cx + 240, cy - 28);
+    ctx.stroke();
+
+    // Display questions per level
+    let qY = cy + 10;
+    let hasQuestions = false;
+
+    for (let lvl = 1; lvl <= 20; lvl++) {
+        const key = `level_${lvl}_questions`;
+        const questions = user[key];
+
+        if (questions && questions.length > 0) {
+            hasQuestions = true;
+            ctx.fillStyle = "rgba(140, 200, 255, 0.9)";
+            ctx.font = "bold 14px 'Courier New'";
+            ctx.fillText(`LEVEL ${lvl} (${questions.length} questions):`, cx - 240, qY);
+            
+            qY += 22;
+
+            // Show first 3 questions as preview
+            ctx.font = "13px 'Courier New'";
+            ctx.fillStyle = "rgb(180, 220, 255)";
+            for (let i = 0; i < Math.min(3, questions.length); i++) {
+                const q = questions[i];
+                ctx.fillText(`• ${q.question} = ${q.answer}`, cx - 220, qY);
+                qY += 20;
+            }
+
+            if (questions.length > 3) {
+                ctx.fillStyle = "rgba(140, 180, 255, 0.7)";
+                ctx.fillText(`   ... +${questions.length - 3} more`, cx - 220, qY);
+                qY += 18;
+            }
+        }
+    }
+
+    if (!hasQuestions) {
+        ctx.fillStyle = "rgba(140, 180, 255, 0.6)";
+        ctx.font = "14px 'Courier New'";
+        ctx.fillText("(No question data saved yet)", cx - 100, cy);
+    }
+
+    // Back button
+    const bx = cx - 80;
+    const by = cy + 165;
+    const bw = 160;
+    const bh = 45;
+
+    const bHover = mouseX > bx && mouseX < bx + bw && mouseY > by && mouseY < by + bh;
+
+    ctx.fillStyle = bHover ? "rgba(60, 100, 220, 0.5)" : "rgba(15, 25, 80, 0.7)";
+    ctx.fillRect(bx, by, bw, bh);
+
+    ctx.shadowColor = bHover ? "rgba(100, 160, 255, 0.9)" : "rgba(60, 100, 200, 0.5)";
+    ctx.shadowBlur = bHover ? 12 : 6;
+    ctx.strokeStyle = bHover ? "rgba(140, 190, 255, 0.9)" : "rgba(80, 140, 255, 0.6)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = bHover ? "rgb(200, 225, 255)" : "rgb(140, 190, 255)";
+    ctx.font = "bold 15px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.fillText("← BACK TO LIST", cx, by + 27);
+
+    // Click handler
+    if (clickX > bx && clickX < bx + bw && clickY > by && clickY < by + bh) {
+        selectedAdminUser = null;
+        clickX = -1;
+        clickY = -1;
+    }
+}
+
+let adminLoaded = false;
+
 function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (scene === "hub") {
@@ -1713,7 +2313,7 @@ function gameLoop() {
         runHow()
     }
     if (scene === "saveGame") {
-        saveGame()
+        // saveGame()
         menu()
     }
     if (scene === "states") {
@@ -1722,6 +2322,15 @@ function gameLoop() {
     if (scene === "resetSession") {
         resetSession()
         menu()
+    }
+    if (scene === "admin") {
+        runAdmin()
+        if (!adminLoaded) {
+            loadAdminData();
+            adminLoaded = true;
+        }
+    } else {
+        adminLoaded = false; // reset when leaving scene
     }
     requestAnimationFrame(gameLoop);
 }

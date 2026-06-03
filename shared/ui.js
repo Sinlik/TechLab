@@ -6,6 +6,9 @@ canvas.height = window.innerHeight;
 let mouseX = 0, mouseY = 0;
 let clickX = -1, clickY = -1;
 
+let time = 0;
+let last = null;
+
 canvas.addEventListener('mousemove', (e) => {
     const rect = canvas.getBoundingClientRect();
     mouseX = e.clientX - rect.left;
@@ -35,12 +38,11 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ── Drawing functions ─────────────────────────────────────
-function homeBackground() {
+function background(t) {
     const W = canvas.width;
     const H = canvas.height;
     const horizon = H * 0.52;
 
-    // sky gradient — deep blue at top, warm hazy at horizon
     const skyGrad = ctx.createLinearGradient(0, 0, 0, horizon);
     skyGrad.addColorStop(0,   "#1A6FA8");
     skyGrad.addColorStop(0.5, "#3BA8D8");
@@ -48,7 +50,6 @@ function homeBackground() {
     ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, W, horizon);
 
-    // sun
     const sunX = W * 0.78, sunY = H * 0.18, sunR = H * 0.07;
     const sunGlow = ctx.createRadialGradient(sunX, sunY, sunR * 0.2, sunX, sunY, sunR * 2.5);
     sunGlow.addColorStop(0,   "rgba(255, 240, 180, 0.5)");
@@ -64,25 +65,21 @@ function homeBackground() {
     ctx.arc(sunX, sunY, sunR * 0.75, 0, Math.PI * 2);
     ctx.fill();
 
-    // clouds
-    function drawCloud(x, y, scale, alpha) {
+    function drawCloud(x, y, scale, alpha, offset) {
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.fillStyle = "#FFFFFF";
-        ctx.shadowColor = "rgba(100, 160, 220, 0.3)";
-        ctx.shadowBlur = 10;
         [[0,0,1],[-.5,.2,.7],[.5,.2,.7],[-.25,-.2,.6],[.25,-.2,.55]].forEach(([dx, dy, r]) => {
             ctx.beginPath();
-            ctx.arc(x + dx * scale * 60, y + dy * scale * 30, r * scale * 30, 0, Math.PI * 2);
+            ctx.arc(x + Math.sin(t * 0.3 + offset) * 4 + dx * scale * 60, y + dy * scale * 30, r * scale * 30, 0, Math.PI * 2);
             ctx.fill();
         });
         ctx.restore();
     }
-    drawCloud(W * 0.15, H * 0.1,  1.1, 0.85);
-    drawCloud(W * 0.42, H * 0.07, 0.8, 0.7);
-    drawCloud(W * 0.65, H * 0.13, 0.6, 0.6);
+    drawCloud(W * 0.15, H * 0.1,  1.1, 0.85, 0);
+    drawCloud(W * 0.42, H * 0.07, 0.8, 0.7,  1.2);
+    drawCloud(W * 0.65, H * 0.13, 0.6, 0.6,  2.5);
 
-    // ocean — layered with depth
     const oceanGrad = ctx.createLinearGradient(0, horizon, 0, horizon + H * 0.18);
     oceanGrad.addColorStop(0,   "#2196C4");
     oceanGrad.addColorStop(0.5, "#1A7CA8");
@@ -90,39 +87,38 @@ function homeBackground() {
     ctx.fillStyle = oceanGrad;
     ctx.fillRect(0, horizon, W, H * 0.18);
 
-    // ocean shimmer lines
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.strokeStyle = "#FFFFFF";
     ctx.lineWidth = 1.5;
     for (let i = 0; i < 6; i++) {
         const wy = horizon + H * (0.03 + i * 0.025);
+        const waveOff = Math.sin(t * 1.2 + i * 0.8) * 5;
         ctx.beginPath();
-        ctx.moveTo(W * 0.05, wy);
+        ctx.moveTo(W * 0.05, wy + waveOff);
         for (let x = 0; x < W; x += 40) {
-            ctx.quadraticCurveTo(x + 20, wy - 3, x + 40, wy);
+            ctx.quadraticCurveTo(x + 20, wy - 3 + waveOff, x + 40, wy + waveOff);
         }
         ctx.stroke();
     }
     ctx.restore();
 
-    // wet sand / surf line
     const surfY = horizon + H * 0.17;
+    const surfShift = Math.sin(t * 0.8) * 3;
     const surfGrad = ctx.createLinearGradient(0, surfY - 6, 0, surfY + 14);
     surfGrad.addColorStop(0,   "rgba(180, 220, 235, 0.7)");
     surfGrad.addColorStop(0.5, "rgba(160, 210, 225, 0.4)");
     surfGrad.addColorStop(1,   "rgba(180, 160, 100, 0)");
     ctx.fillStyle = surfGrad;
     ctx.beginPath();
-    ctx.moveTo(0, surfY);
+    ctx.moveTo(0, surfY + surfShift);
     for (let x = 0; x <= W; x += 60) {
-        ctx.quadraticCurveTo(x + 30, surfY - 8, x + 60, surfY + 4);
+        ctx.quadraticCurveTo(x + 30, surfY - 8 + surfShift, x + 60, surfY + 4 + surfShift);
     }
     ctx.lineTo(W, surfY + 20);
     ctx.lineTo(0, surfY + 20);
     ctx.fill();
 
-    // dry sand — textured gradient
     const sandGrad = ctx.createLinearGradient(0, surfY + 10, 0, H);
     sandGrad.addColorStop(0,   "#D4B870");
     sandGrad.addColorStop(0.3, "#C9A84C");
@@ -130,18 +126,6 @@ function homeBackground() {
     ctx.fillStyle = sandGrad;
     ctx.fillRect(0, surfY + 8, W, H - surfY - 10);
 
-    // sand texture — subtle stipple
-    ctx.save();
-    ctx.globalAlpha = 0.06;
-    for (let i = 0; i < 300; i++) {
-        const sx = Math.random() * W;
-        const sy = surfY + 10 + Math.random() * (H - surfY - 10);
-        ctx.fillStyle = i % 2 === 0 ? "#000000" : "#FFFFFF";
-        ctx.fillRect(sx, sy, 1.5, 1.5);
-    }
-    ctx.restore();
-
-    // sand ripples
     ctx.save();
     ctx.globalAlpha = 0.12;
     ctx.strokeStyle = "#8B6914";
@@ -156,21 +140,18 @@ function homeBackground() {
     }
     ctx.restore();
 
-    // volleyball net
     const netCX  = W * 0.48;
     const netTop = surfY - H * 0.2;
     const netBot = surfY + H * 0.04;
     const netHalf = W * 0.1;
     const postW  = 6;
 
-    // net shadow on sand
     ctx.save();
     ctx.globalAlpha = 0.15;
     ctx.fillStyle = "#4A3000";
     ctx.fillRect(netCX - netHalf - 4, netBot - 2, netHalf * 2 + postW + 8, 8);
     ctx.restore();
 
-    // posts
     const postGrad = ctx.createLinearGradient(0, 0, postW * 2, 0);
     postGrad.addColorStop(0, "#C8A040");
     postGrad.addColorStop(0.5, "#F0D070");
@@ -179,15 +160,8 @@ function homeBackground() {
     ctx.fillRect(netCX - netHalf - postW / 2, netTop, postW, netBot - netTop);
     ctx.fillRect(netCX + netHalf - postW / 2, netTop, postW, netBot - netTop);
 
-    // net mesh
-    const netMidY = netTop + (netBot - netTop) * 0.3;
-    ctx.strokeStyle = "#FFFFFF";
-    ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.9;
-    // top tape
     ctx.fillStyle = "#E8E8E8";
     ctx.fillRect(netCX - netHalf, netTop, netHalf * 2, 5);
-    // vertical net lines
     ctx.save();
     ctx.globalAlpha = 0.5;
     ctx.strokeStyle = "#D0D0D0";
@@ -198,7 +172,6 @@ function homeBackground() {
         ctx.lineTo(nx, netBot);
         ctx.stroke();
     }
-    // horizontal net lines
     for (let ny = netTop + 5; ny <= netBot; ny += 10) {
         ctx.beginPath();
         ctx.moveTo(netCX - netHalf, ny);
@@ -207,72 +180,118 @@ function homeBackground() {
     }
     ctx.restore();
 
-    // stick figures
-    function stickFigure(x, y, size, facing) {
-        const c = "#1A4A6A";
-        ctx.strokeStyle = c;
-        ctx.fillStyle = c;
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = "round";
-        // shadow
-        ctx.save();
-        ctx.globalAlpha = 0.15;
-        ctx.fillStyle = "#000";
+    return { surfY, netCX, netTop };
+}
+
+function stickFigure(x, y, size, facing, armRaise) {
+    const c = "#1A4A6A";
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 2, size * 0.35, size * 0.06, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.arc(x, y - size * 1.65, size * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x, y - size * 1.43);
+    ctx.lineTo(x, y - size * 0.6);
+    ctx.stroke();
+    const armY = y - size * 1.15;
+    const raise = armRaise || 0;
+    ctx.beginPath();
+    ctx.moveTo(x, armY);
+    ctx.lineTo(x + facing * size * 0.45, armY - size * 0.15 - raise * size * 0.4);
+    ctx.moveTo(x, armY);
+    ctx.lineTo(x - facing * size * 0.3, armY + size * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y - size * 0.6);
+    ctx.lineTo(x - size * 0.25, y);
+    ctx.moveTo(x, y - size * 0.6);
+    ctx.lineTo(x + size * 0.25, y);
+    ctx.stroke();
+}
+
+function beachBall(x, y, r) {
+    const colors = ["#E8403A","#F5C518","#4DB8FF","#FFFFFF","#1DB954"];
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.clip();
+    for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        ctx.fillStyle = colors[i];
         ctx.beginPath();
-        ctx.ellipse(x, y + 2, size * 0.35, size * 0.06, 0, 0, Math.PI * 2);
+        ctx.moveTo(x, y);
+        ctx.arc(x, y, r, a, a + Math.PI * 2 / 5);
+        ctx.closePath();
         ctx.fill();
-        ctx.restore();
-        // head
-        ctx.beginPath();
-        ctx.arc(x, y - size * 1.65, size * 0.22, 0, Math.PI * 2);
-        ctx.fill();
-        // body
-        ctx.beginPath();
-        ctx.moveTo(x, y - size * 1.43);
-        ctx.lineTo(x, y - size * 0.6);
-        ctx.stroke();
-        // arms — raised on serving side
-        const armY = y - size * 1.15;
-        ctx.beginPath();
-        ctx.moveTo(x, armY);
-        ctx.lineTo(x + facing * size * 0.45, armY - size * 0.15);
-        ctx.moveTo(x, armY);
-        ctx.lineTo(x - facing * size * 0.3, armY + size * 0.1);
-        ctx.stroke();
-        // legs
-        ctx.beginPath();
-        ctx.moveTo(x, y - size * 0.6);
-        ctx.lineTo(x - size * 0.25, y);
-        ctx.moveTo(x, y - size * 0.6);
-        ctx.lineTo(x + size * 0.25, y);
-        ctx.stroke();
     }
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath();
+    ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function loop(ts) {
+    if (!last) last = ts;
+    const dt = Math.min((ts - last) / 1000, 0.05);
+    last = ts;
+    time += dt;
+
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    const { surfY, netCX, netTop } = background(time);
 
     const figY = surfY + H * 0.06;
     const figSize = H * 0.1;
-    stickFigure(W * 0.25, figY, figSize,  1);
-    stickFigure(W * 0.65, figY, figSize, -1);
 
-    // beach balls
-    function beachBall(x, y, r) {
-        // base
-        ctx.fillStyle = "#1A5F7A";
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-        // shine
-        ctx.save();
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = "#FFFFFF";
-        ctx.beginPath();
-        ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+    const period = 3.0;
+    const phase = (time % period) / period;
+
+    const ballStartX = W * 0.25;
+    const ballStartY = figY - figSize * 2;
+    const ballPeakY = netTop - H * 0.08;
+    const ballEndX = W * 0.65;
+    const ballEndY = figY - figSize * 2;
+
+    let ballX, ballY, phase2;
+    const leftServe = phase < 0.5;
+    if (leftServe) {
+        phase2 = phase / 0.5;
+        ballX = ballStartX + (ballEndX - ballStartX) * phase2;
+        ballY = ballStartY + (ballEndY - ballStartY) * phase2
+              + (-Math.sin(phase2 * Math.PI)) * (ballPeakY - (ballStartY + ballEndY) / 2) * 1.8;
+    } else {
+        phase2 = (phase - 0.5) / 0.5;
+        ballX = ballEndX + (ballStartX - ballEndX) * phase2;
+        ballY = ballEndY + (ballStartY - ballEndY) * phase2
+              + (-Math.sin(phase2 * Math.PI)) * (ballPeakY - (ballStartY + ballEndY) / 2) * 1.8;
     }
 
-    beachBall(W * 0.13, surfY + H * 0.07, H * 0.055);  // on sand
-    beachBall(W * 0.49, surfY - H * 0.25, H * 0.065);  // in air above net
+    const leftArmRaise  = leftServe  && phase2 < 0.3 ? Math.sin(phase2 / 0.3 * Math.PI) : 0;
+    const rightArmRaise = !leftServe && phase2 < 0.3 ? Math.sin(phase2 / 0.3 * Math.PI) : 0;
+
+    stickFigure(W * 0.25, figY, figSize,  1, leftArmRaise);
+    stickFigure(W * 0.65, figY, figSize, -1, rightArmRaise);
+    beachBall(ballX, ballY, H * 0.045);
+
+    requestAnimationFrame(loop);
 }
+
 function button(text, x, y, w, h, target) {
     // make a generic wood sign post
     // const w = 100, h = 90;
@@ -339,7 +358,7 @@ function button(text, x, y, w, h, target) {
     ctx.stroke();
 
     // text
-    ctx.fillStyle = hover ? "rgba(20, 10, 0, 0.9)" : "rgba(20, 10, 0, 0.75)";
+    ctx.fillStyle = hover ? "#FFF8DC" : "#F5E8A0";
     ctx.font = "bold 16px 'Georgia', serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
