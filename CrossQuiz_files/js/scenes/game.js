@@ -71,14 +71,11 @@ function createLevel() {
     }
 
     numberToSolveScreen(canvas.width/2 - 50, canvas.height/2 - 230, mathQuestion);
-    // console.log("mathQuestion: " + mathQuestion + ", numToSolve: " + numToSolve);
     pointsScreen(canvas.width/2 - 190, canvas.height/2 - 230);
     resultScreen(canvas.width/2 - 50, canvas.height/2 - 170, resultText);
-    // let allSymbols = squares.filter(sq => sq.exist).map(sq => sq.symbol);
     displayLevelNum(canvas.width/2 - 190, canvas.height/2 - 170)
     healthScreen(canvas.width/2 + 110, canvas.height/2 - 230);
     timerScreen(canvas.width/2 + 110, canvas.height/2 - 170);
-    // let numbers = allSymbols.filter(sym => typeof sym === "number");
 
     // apply blur to everything drawn after this point if game is won
     let output = ""
@@ -88,6 +85,8 @@ function createLevel() {
             mathSquare(sq.x, sq.y, 50, 50, sq.symbol, sq.type, sq.hitsLeft);
         }
     }
+
+    handleTileClicks();
     // if points = number of symbols, then display winning screen
     // console.log("numbers left: " + numbers.length);
     // Win condition: no more tiles

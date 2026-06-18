@@ -403,6 +403,12 @@ function gameOverScreen() {
     }
 }
 
+function formatTime(totalSeconds) {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function runHow() {
     // background
     ctx.fillStyle = "rgba(5, 8, 20, 1)";
@@ -503,4 +509,56 @@ function runHow() {
     ctx.fillStyle = "rgba(140, 180, 255, 0.8)";
     ctx.font = "12px 'Courier New'";
     ctx.fillText("Tip: Later levels have more tiles and harder numbers.", cx, cy + 105);
+}
+
+let saveGameCounter = 0;
+function runSaveGame() {
+    ctx.fillStyle = "rgba(5, 8, 20, 1)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // stars
+    for (let i = 0; i < 160; i++) {
+        const sx = (i * 137.508) % canvas.width;
+        const sy = (i * 97.333) % canvas.height;
+        const size = i % 7 === 0 ? 1.8 : i % 3 === 0 ? 1.1 : 0.5;
+        const brightness = 0.2 + (i % 9) * 0.08;
+        ctx.fillStyle = `rgba(200, 220, 255, ${brightness})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+
+    // panel
+    ctx.fillStyle = "rgba(15, 25, 60, 0.9)";
+    ctx.fillRect(cx - 180, cy - 80, 360, 160);
+
+    ctx.shadowColor = "rgba(60, 255, 150, 0.6)";
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = "rgba(60, 255, 150, 0.5)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - 180, cy - 80, 360, 160);
+    ctx.shadowBlur = 0;
+
+    // title
+    ctx.shadowColor = "rgba(80, 255, 160, 0.9)";
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "rgb(80, 255, 160)";
+    ctx.font = "bold 28px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("SAVE COMPLETE", cx, cy - 25);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = "rgba(180, 220, 255, 0.9)";
+    ctx.font = "14px 'Courier New'";
+    ctx.fillText(`Level: ${unlockedUpTo}`, cx, cy + 10);
+    ctx.fillText(`Tiles Clicked: ${tilesClicked}`, cx, cy + 35);
+
+    saveGameCounter++;
+    if (saveGameCounter > 120) {
+        scene = "menu";
+        saveGameCounter = 0;
+    }
 }

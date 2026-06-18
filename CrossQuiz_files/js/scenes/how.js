@@ -1,7 +1,30 @@
 // call this once per level, before the game starts
-let howToShown = false;
-let howToTimer = 0;
 const HOW_TO_DURATION = 180; // frames (~3 seconds at 60fps)
+
+const LEVEL_HOWTO = {
+    1:  "2 tiles · Add or subtract numbers up to 5.",
+    2:  "4 tiles · Same rules, a bit more to solve!",
+    3:  "4 tiles · Numbers go up to 8 now.",
+    4:  "4 tiles · Full 1–10 range unlocked.",
+    5:  "6 tiles · Grid gets wider. Stay sharp!",
+    6:  "6 tiles · Numbers up to 12 introduced.",
+    7:  "9 tiles · Bigger grid. Addition & subtraction.",
+    8:  "9 tiles · MULTIPLICATION unlocked! ×2 to ×5.",
+    9:  "9 tiles · Times tables up to ×12.",
+    10: "9 tiles · No small numbers — stay focused.",
+    11: "12 tiles · Grid grows. All three operators.",
+    12: "12 tiles · Numbers up to 15 appear.",
+    13: "16 tiles · 4×4 grid. It's getting serious.",
+    14: "16 tiles · Numbers up to 20. Don't panic!",
+    15: "20 tiles · HARD MODE. Multiples of 5 & 10.",
+    16: "20 tiles · 50 joins the number pool.",
+    17: "25 tiles · Full 5×5 grid. Maximum tiles!",
+    18: "25 tiles · Numbers up to 100.",
+    19: "25 tiles · 75 added. Toughest mix yet.",
+    20: "25 tiles · FINAL LEVEL. Give it everything!",
+};
+
+const MAX_HEALTH = 3;
 
 function howTo() {
     if (howToShown) return;
